@@ -1,0 +1,6 @@
+framework module ObjectMapper {
+  umbrella header "Pods-ObjectMapper-umbrella.h"
+
+  export *
+  module * { export * }
+}

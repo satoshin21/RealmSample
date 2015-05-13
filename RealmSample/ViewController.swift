@@ -7,19 +7,33 @@
 //
 
 import UIKit
+import Alamofire
+import ObjectMapper
+import AlamofireObjectMapper
+import SwiftyJSON
+import Realm
 
-class ViewController: UIViewController {
-
+class ViewController: UITableViewController {
+    
+    let hotEntryUrl = "https://ajax.googleapis.com/ajax/services/feed/load?v=1.0&q=http://b.hatena.ne.jp/hotentry/it.rss&num=100"
+    
     override func viewDidLoad() {
         super.viewDidLoad()
-        // Do any additional setup after loading the view, typically from a nib.
+        
+        Alamofire.request(.GET, hotEntryUrl, parameters: nil).responseJSON(options: NSJSONReadingOptions.AllowFragments) { (request, response, responseObject, error) -> Void in
+            let json = JSON(responseObject!)
+            
+            let entries = json["responseData"]["feed"]["entries"]
+            for (index: String, subJson : JSON) in entries {
+                let entry : Entry? = Mapper<Entry>().map(subJson.dictionaryObject)
+                println(entry?.publishedDate)
+            }
+        }
     }
 
     override func didReceiveMemoryWarning() {
         super.didReceiveMemoryWarning()
-        // Dispose of any resources that can be recreated.
     }
-
 
 }
 

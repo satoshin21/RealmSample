@@ -1,0 +1,6 @@
+framework module AlamofireObjectMapper {
+  umbrella header "Pods-AlamofireObjectMapper-umbrella.h"
+
+  export *
+  module * { export * }
+}
