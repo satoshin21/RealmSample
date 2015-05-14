@@ -8,32 +8,47 @@
 
 import UIKit
 import ObjectMapper
+import Realm
 
-class Entry : Mappable {
+class Entry : RLMObject {
     
-    var content : String?
-    var link : String?
-    var publishedDate : NSDate?
-    var title : String?
-    var categories : [String]?
+    dynamic var content : String = ""
+    dynamic var link : String = ""
+    dynamic var publishedDate : NSDate = NSDate()
+    dynamic var title : String = ""
+    dynamic var contentSnippet : String = ""
+//    dynamic var categories : [String] = []
     
-    required init?(_ map: Map) {
+    required convenience init?(_ map: Map) {
+        self.init()
         mapping(map)
     }
+    
+    override class func primaryKey() -> String {
+        return "link"
+    }
+}
+
+extension Entry : Mappable {
     
     func mapping(map: Map) {
         content         <- map["content"]
         link            <- map["link"]
         publishedDate   <- (map["publishedDate"] , EntryDateTransform())
         title           <- map["title"]
-        categories      <- map["categories"]
+        contentSnippet  <- map["contentSnippet"]
+//        categories      <- map["categories"]
     }
 }
+
 
 class EntryDateTransform : DateTransform {
     override func transformFromJSON(value: AnyObject?) -> NSDate? {
         if let dateStr = value as? String {
-            return NSDate()
+            return NSDate.dateWithString(
+                dateStr,
+                format: "E, dd MMM yyyy HH:mm:ss zzzz" ,
+                locale : NSLocale(localeIdentifier: "en_US"))
         }
         return nil
     }

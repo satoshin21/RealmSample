@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>IDESourceControlProjectFavoriteDictionaryKey</key>
+	<false/>
+	<key>IDESourceControlProjectIdentifier</key>
+	<string>F9D7D00F-CAB7-46CA-B214-8F84FC26063D</string>
+	<key>IDESourceControlProjectName</key>
+	<string>RealmSample</string>
+	<key>IDESourceControlProjectOriginsDictionary</key>
+	<dict>
+		<key>E52B5C0556ECAF4A457925942605035D61ACE091</key>
+		<string>https://github.com/SatoshiN211/RealmSample.git</string>
+	</dict>
+	<key>IDESourceControlProjectPath</key>
+	<string>RealmSample.xcworkspace</string>
+	<key>IDESourceControlProjectRelativeInstallPathDictionary</key>
+	<dict>
+		<key>E52B5C0556ECAF4A457925942605035D61ACE091</key>
+		<string>..</string>
+	</dict>
+	<key>IDESourceControlProjectURL</key>
+	<string>https://github.com/SatoshiN211/RealmSample.git</string>
+	<key>IDESourceControlProjectVersion</key>
+	<integer>111</integer>
+	<key>IDESourceControlProjectWCCIdentifier</key>
+	<string>E52B5C0556ECAF4A457925942605035D61ACE091</string>
+	<key>IDESourceControlProjectWCConfigurations</key>
+	<array>
+		<dict>
+			<key>IDESourceControlRepositoryExtensionIdentifierKey</key>
+			<string>public.vcs.git</string>
+			<key>IDESourceControlWCCIdentifierKey</key>
+			<string>E52B5C0556ECAF4A457925942605035D61ACE091</string>
+			<key>IDESourceControlWCCName</key>
+			<string>RealmSample</string>
+		</dict>
+	</array>
+</dict>
+</plist>
