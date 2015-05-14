@@ -22,6 +22,7 @@ class ViewController: UITableViewController ,UITableViewDelegate,UITableViewData
     override func viewDidLoad() {
         super.viewDidLoad()
 
+        self.tableView.tableHeaderView = UIView(frame: CGRectMake(0, 0, 0, 20))
         self.tableView.separatorStyle = .None
         
         let realm = RLMRealm.defaultRealm()
@@ -70,7 +71,7 @@ class ViewController: UITableViewController ,UITableViewDelegate,UITableViewData
     }
 
     override func tableView(tableView: UITableView, heightForRowAtIndexPath indexPath: NSIndexPath) -> CGFloat {
-        return 90.0
+        return 140.0
     }
     
     override func tableView(tableView: UITableView, didSelectRowAtIndexPath indexPath: NSIndexPath) {
