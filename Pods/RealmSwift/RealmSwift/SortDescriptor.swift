@@ -45,8 +45,8 @@ public struct SortDescriptor {
     /**
     Creates a `SortDescriptor` with the given property and ascending values.
 
-    :param: property  The name of the property which this sort descriptor orders results by.
-    :param: ascending Whether this descriptor sorts in ascending or descending order.
+    - parameter property:  The name of the property which this sort descriptor orders results by.
+    - parameter ascending: Whether this descriptor sorts in ascending or descending order.
     */
     public init(property: String, ascending: Bool = true) {
         self.property = property
@@ -61,12 +61,60 @@ public struct SortDescriptor {
     }
 }
 
-// MARK: Printable
+// MARK: CustomStringConvertible
 
-extension SortDescriptor: Printable {
+extension SortDescriptor: CustomStringConvertible {
     /// Returns a human-readable description of the sort descriptor.
     public var description: String {
         let direction = ascending ? "ascending" : "descending"
         return "SortDescriptor (property: \(property), direction: \(direction))"
+    }
+}
+
+// MARK: Equatable
+
+extension SortDescriptor: Equatable {}
+
+/// Returns whether the two sort descriptors are equal.
+public func ==(lhs: SortDescriptor, rhs: SortDescriptor) -> Bool {
+    return lhs.property == rhs.property &&
+        lhs.ascending == lhs.ascending
+}
+
+// MARK: StringLiteralConvertible
+
+extension SortDescriptor: StringLiteralConvertible {
+
+    /// `StringLiteralType`. Required for `StringLiteralConvertible` conformance.
+    public typealias UnicodeScalarLiteralType = StringLiteralType
+
+    /// `StringLiteralType`. Required for `StringLiteralConvertible` conformance.
+    public typealias ExtendedGraphemeClusterLiteralType = StringLiteralType
+
+    /**
+    Creates a `SortDescriptor` from a `UnicodeScalarLiteralType`.
+
+    - parameter unicodeScalarLiteral: Property name literal.
+    */
+    public init(unicodeScalarLiteral value: UnicodeScalarLiteralType) {
+        self.init(property: value)
+    }
+
+    /**
+    Creates a `SortDescriptor` from an `ExtendedGraphemeClusterLiteralType`.
+
+    - parameter extendedGraphemeClusterLiteral: Property name literal.
+    */
+    public init(extendedGraphemeClusterLiteral value: ExtendedGraphemeClusterLiteralType) {
+        self.init(property: value)
+    }
+
+    /**
+    Creates a `SortDescriptor` from a `StringLiteralType`.
+
+    - parameter stringLiteral: Property name literal.
+    */
+    public init(stringLiteral value: StringLiteralType) {
+        self.init(property: value)
     }
 }

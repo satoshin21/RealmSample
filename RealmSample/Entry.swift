@@ -17,7 +17,6 @@ class Entry : RLMObject {
     dynamic var publishedDate : NSDate = NSDate()
     dynamic var title : String = ""
     dynamic var contentSnippet : String = ""
-//    dynamic var categories : [String] = []
     
     required convenience init?(_ map: Map) {
         self.init()
@@ -37,7 +36,6 @@ extension Entry : Mappable {
         publishedDate   <- (map["publishedDate"] , EntryDateTransform())
         title           <- map["title"]
         contentSnippet  <- map["contentSnippet"]
-//        categories      <- map["categories"]
     }
 }
 

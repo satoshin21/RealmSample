@@ -57,6 +57,26 @@ void RLMClearRealmCache() {
     }
 }
 
+void RLMInstallUncaughtExceptionHandler() {
+    static auto previousHandler = NSGetUncaughtExceptionHandler();
+
+    NSSetUncaughtExceptionHandler([](NSException *exception) {
+        NSNumber *threadID = @(pthread_mach_thread_np(pthread_self()));
+        @synchronized(s_realmsPerPath) {
+            for (NSMapTable *realmsPerThread in s_realmsPerPath.allValues) {
+                if (RLMRealm *realm = [realmsPerThread objectForKey:threadID]) {
+                    if (realm->_inWriteTransaction) {
+                        [realm cancelWriteTransaction];
+                    }
+                }
+            }
+        }
+        if (previousHandler) {
+            previousHandler(exception);
+        }
+    });
+}
+
 // Convert an error code to either an NSError or an exception
 static id handleError(int err, NSError **error) {
     if (!error) {
@@ -209,14 +229,18 @@ public:
         _shutdownReadFd = pipeFd[0];
         _shutdownWriteFd = pipeFd[1];
 
-        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-            [self listen];
-        });
+        NSThread *thread = [[NSThread alloc] initWithTarget:self selector:@selector(listen) object:nil];
+        // Use the minimum allowed stack size, as we need very little in our listener
+        // https://developer.apple.com/library/ios/documentation/Cocoa/Conceptual/Multithreading/CreatingThreads/CreatingThreads.html#//apple_ref/doc/uid/10000057i-CH15-SW7
+        thread.stackSize = 16 * 1024;
+        thread.name = @"RLMRealm notification listener";
+        [thread start];
     }
     return self;
 }
 
 - (void)listen {
+
     // Create the runloop source
     CFRunLoopSourceContext ctx{};
     ctx.info = (__bridge void *)self;

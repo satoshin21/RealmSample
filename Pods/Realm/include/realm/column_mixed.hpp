@@ -34,36 +34,36 @@ namespace realm {
 
 
 // Pre-declarations
-class ColumnBinary;
+class BinaryColumn;
 
 
-/// A mixed column (ColumnMixed) is composed of three subcolumns. The
+/// A mixed column (MixedColumn) is composed of three subcolumns. The
 /// first subcolumn is an integer column (Column) and stores value
 /// types. The second one stores values and is a subtable parent
-/// column (ColumnSubtableParent), which is a subclass of an integer
-/// column (Column). The last one is a binary column (ColumnBinary)
+/// column (SubtableColumnParent), which is a subclass of an integer
+/// column (Column). The last one is a binary column (BinaryColumn)
 /// and stores additional data for values of type string or binary
 /// data. The last subcolumn is optional. The root of a mixed column
 /// is an array node of type Array that stores the root refs of the
 /// subcolumns.
-class ColumnMixed: public ColumnBase {
+class MixedColumn: public ColumnBaseSimple {
 public:
     /// Create a mixed column wrapper and attach it to a preexisting
     /// underlying structure of arrays.
     ///
     /// \param table If this column is used as part of a table you
     /// must pass a pointer to that table. Otherwise you must pass
-    /// null.
+    /// null
     ///
     /// \param column_ndx If this column is used as part of a table
     /// you must pass the logical index of the column within that
     /// table. Otherwise you should pass zero.
-    ColumnMixed(Allocator&, ref_type, Table* table, std::size_t column_ndx);
+    MixedColumn(Allocator&, ref_type, Table* table, std::size_t column_ndx);
 
-    ~ColumnMixed() REALM_NOEXCEPT override;
+    ~MixedColumn() REALM_NOEXCEPT override;
 
     DataType get_type(std::size_t ndx) const REALM_NOEXCEPT;
-    std::size_t size() const REALM_NOEXCEPT { return m_types->size(); }
+    std::size_t size() const REALM_NOEXCEPT final { return m_types->size(); }
     bool is_empty() const REALM_NOEXCEPT { return size() == 0; }
 
     int64_t get_int(std::size_t ndx) const REALM_NOEXCEPT;
@@ -73,6 +73,7 @@ public:
     double get_double(std::size_t ndx) const REALM_NOEXCEPT;
     StringData get_string(std::size_t ndx) const REALM_NOEXCEPT;
     BinaryData get_binary(std::size_t ndx) const REALM_NOEXCEPT;
+    StringData get_index_data(std::size_t ndx, char* buffer) const REALM_NOEXCEPT override;
 
     /// The returned array ref is zero if the specified row does not
     /// contain a subtable.
@@ -102,7 +103,7 @@ public:
     void set_datetime(std::size_t ndx, DateTime value);
     void set_float(std::size_t ndx, float value);
     void set_double(std::size_t ndx, double value);
-    void set_string(std::size_t ndx, StringData value);
+    void set_string(std::size_t ndx, StringData value) override;
     void set_binary(std::size_t ndx, BinaryData value);
     void set_subtable(std::size_t ndx, const Table* value);
 
@@ -120,7 +121,7 @@ public:
     void clear();
 
     /// Compare two mixed columns for equality.
-    bool compare_mixed(const ColumnMixed&) const;
+    bool compare_mixed(const MixedColumn&) const;
 
     void discard_child_accessors() REALM_NOEXCEPT;
 
@@ -132,9 +133,9 @@ public:
     ref_type write(std::size_t, std::size_t, std::size_t,
                    _impl::OutputStream&) const override;
 
-    void insert(std::size_t, std::size_t, bool) override;
-    void erase(std::size_t, bool) override;
-    void move_last_over(std::size_t, std::size_t, bool) override;
+    void insert_rows(size_t, size_t, size_t) override;
+    void erase_rows(size_t, size_t, size_t, bool) override;
+    void move_last_row_over(size_t, size_t, bool) override;
     void clear(std::size_t, bool) override;
     void update_from_parent(std::size_t) REALM_NOEXCEPT override;
     void adj_acc_insert_rows(std::size_t, std::size_t) REALM_NOEXCEPT override;
@@ -175,7 +176,7 @@ private:
     /// Stores the MixedColType of each value at the given index. For
     /// values that uses all 64 bits, the type also encodes the sign
     /// bit by having distinct types for positive negative values.
-    std::unique_ptr<Column> m_types;
+    std::unique_ptr<IntegerColumn> m_types;
 
     /// Stores the data for each entry. For a subtable, the stored
     /// value is the ref of the subtable. For string and binary data,
@@ -186,12 +187,10 @@ private:
     std::unique_ptr<RefsColumn> m_data;
 
     /// For string and binary data types, the bytes are stored here.
-    std::unique_ptr<ColumnBinary> m_binary_data;
+    std::unique_ptr<BinaryColumn> m_binary_data;
 
-    std::size_t do_get_size() const REALM_NOEXCEPT override { return size(); }
-
-    void do_erase(std::size_t row_ndx, bool is_last);
-    void do_move_last_over(std::size_t row_ndx, std::size_t last_row_ndx);
+    void do_erase(size_t row_ndx, size_t num_rows_to_erase, size_t prior_num_rows);
+    void do_move_last_over(size_t row_ndx, size_t prior_num_rows);
     void do_clear(std::size_t num_rows);
 
     void create(Allocator&, ref_type, Table*, std::size_t column_ndx);
@@ -219,21 +218,27 @@ private:
 #endif
 };
 
+inline StringData MixedColumn::get_index_data(std::size_t, char*) const REALM_NOEXCEPT
+{
+    REALM_ASSERT(false && "Index not supported for MixedColumn yet.");
+    REALM_UNREACHABLE();
+}
 
-class ColumnMixed::RefsColumn: public ColumnSubtableParent {
+
+class MixedColumn::RefsColumn: public SubtableColumnParent {
 public:
     RefsColumn(Allocator& alloc, ref_type ref, Table* table, std::size_t column_ndx):
-        ColumnSubtableParent(alloc, ref, table, column_ndx)
+        SubtableColumnParent(alloc, ref, table, column_ndx)
     {
     }
 
     ~RefsColumn() REALM_NOEXCEPT override {}
 
-    using ColumnSubtableParent::get_subtable_ptr;
+    using SubtableColumnParent::get_subtable_ptr;
 
     void refresh_accessor_tree(std::size_t, const Spec&) override;
 
-    friend class ColumnMixed;
+    friend class MixedColumn;
 };
 
 

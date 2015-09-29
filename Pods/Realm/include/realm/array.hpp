@@ -53,6 +53,7 @@ Searching: The main finding function is:
 #include <realm/alloc.hpp>
 #include <realm/string_data.hpp>
 #include <realm/query_conditions.hpp>
+#include <realm/column_fwd.hpp>
 
 /*
     MMX: mmintrin.h
@@ -80,6 +81,8 @@ template<class T> inline T no0(T v) { return v == 0 ? 1 : v; }
 /// context. It is returned by some search functions to indicate 'not
 /// found'. It is similar in function to std::string::npos.
 const std::size_t npos = std::size_t(-1);
+
+
 
 /// Alias for realm::npos.
 const std::size_t not_found = npos;
@@ -143,9 +146,8 @@ const std::size_t not_found = npos;
 
 // Pre-definitions
 class Array;
-class AdaptiveStringColumn;
+class StringColumn;
 class GroupWriter;
-class Column;
 template<class T> class QueryState;
 namespace _impl { class ArrayWriterBase; }
 
@@ -266,15 +268,13 @@ public:
         type_HasRefs
     };
 
-    /// Create a new empty array of the specified type and attach this accessor
-    /// to it. This does not modify the parent reference information of this
-    /// accessor.
+    /// Create a new integer array of the specified type and size, and filled
+    /// with the specified value, and attach this accessor to it. This does not
+    /// modify the parent reference information of this accessor.
     ///
     /// Note that the caller assumes ownership of the allocated underlying
     /// node. It is not owned by the accessor.
-    ///
-    /// FIXME: Belongs in IntegerArray
-    void create(Type, bool context_flag = false);
+    void create(Type, bool context_flag = false, size_t size = 0, int_fast64_t value = 0);
 
     /// Reinitialize this array accessor to point to the specified new
     /// underlying memory. This does not modify the parent reference information
@@ -315,9 +315,15 @@ public:
 
     void move_assign(Array&) REALM_NOEXCEPT; // Move semantics for assignment
 
-    /// Construct an empty array of the specified type, and return just the
-    /// reference to the underlying memory.
+    /// Construct an empty integer array of the specified type, and return just
+    /// the reference to the underlying memory.
     static MemRef create_empty_array(Type, bool context_flag, Allocator&);
+
+    /// Construct an integer array of the specified type and size, and return
+    /// just the reference to the underlying memory. All elements will be
+    /// initialized to the specified value.
+    static MemRef create_array(Type, bool context_flag, size_t size,
+                               int_fast64_t value, Allocator&);
 
     /// Construct a shallow copy of the specified slice of this array using the
     /// specified target allocator. Subarrays will **not** be cloned. See
@@ -359,8 +365,7 @@ public:
     bool is_empty() const REALM_NOEXCEPT;
     Type get_type() const REALM_NOEXCEPT;
 
-    // Exists for find_all() because array.hpp cannot append results directly to a Column type (incomplete class)
-    static void add_to_column(Column* column, int64_t value);
+    static void add_to_column(IntegerColumn* column, int64_t value);
 
     void insert(std::size_t ndx, int_fast64_t value);
     void add(int_fast64_t value);
@@ -453,15 +458,11 @@ public:
     /// specified value.
     void ensure_minimum_width(int64_t value);
 
-    // Direct access methods
-    const Array* GetBlock(std::size_t ndx, Array& arr, std::size_t& off,
-                          bool use_retval = false) const REALM_NOEXCEPT; // FIXME: Constness is not propagated to the sub-array
-
     typedef StringData (*StringGetter)(void*, std::size_t, char*); // Pre-declare getter function from string index
-    size_t IndexStringFindFirst(StringData value, void* column, StringGetter get_func) const;
-    void   IndexStringFindAll(Column& result, StringData value, void* column, StringGetter get_func) const;
-    size_t IndexStringCount(StringData value, void* column, StringGetter get_func) const;
-    FindRes IndexStringFindAllNoCopy(StringData value, size_t& res_ref, void* column, StringGetter get_func) const;
+    size_t IndexStringFindFirst(StringData value, ColumnBase* column) const;
+    void   IndexStringFindAll(IntegerColumn& result, StringData value, ColumnBase* column) const;
+    size_t IndexStringCount(StringData value, ColumnBase* column) const;
+    FindRes IndexStringFindAllNoCopy(StringData value, size_t& res_ref, ColumnBase* column) const;
 
     /// This one may change the represenation of the array, so be carefull if
     /// you call it after ensure_minimum_width().
@@ -523,7 +524,29 @@ public:
     std::size_t upper_bound_int(int64_t value) const REALM_NOEXCEPT;
     //@}
 
-    std::size_t FindGTE(int64_t target, std::size_t start, const Array* indirection) const;
+    /// \brief Search the \c Array for a value greater or equal than \a target,
+    /// starting the search at the \a start index. If \a indirection is
+    /// provided, use it as a look-up table to iterate over the \c Array.
+    ///
+    /// If \a indirection is not provided, then the \c Array must be sorted in
+    /// ascending order. If \a indirection is provided, then its values should
+    /// point to indices in this \c Array in such a way that iteration happens
+    /// in ascending order.
+    ///
+    /// Behaviour is undefined if:
+    /// - a value in \a indirection is out of bounds for this \c Array;
+    /// - \a indirection does not contain at least as many elements as this \c
+    ///   Array;
+    /// - sorting conditions are not respected;
+    /// - \a start is greater than the number of elements in this \c Array or
+    ///   \a indirection (if provided).
+    ///
+    /// \param target the smallest value to search for
+    /// \param start the offset at which to start searching in the array
+    /// \param indirection an \c Array containing valid indices of values in
+    ///        this \c Array, sorted in ascending order
+    /// \return the index of the value if found, or realm::not_found otherwise
+    std::size_t find_gte(const int64_t target, std::size_t start, Array const* indirection) const;
     void Preset(int64_t min, int64_t max, std::size_t count);
     void Preset(std::size_t bitwidth, std::size_t count);
 
@@ -604,7 +627,7 @@ public:
     bool find(int64_t value, size_t start, size_t end, size_t baseindex,
               QueryState<int64_t>* state, Callback callback) const;
 
-    // This is the one installed into the m_finder slots.
+    // This is the one installed into the m_vtable->finder slots.
     template<class cond, Action action, size_t bitwidth>
     bool find(int64_t value, size_t start, size_t end, size_t baseindex,
               QueryState<int64_t>* state) const;
@@ -633,7 +656,7 @@ public:
     std::size_t find_first(int64_t value, std::size_t start = 0,
                            std::size_t end = std::size_t(-1)) const;
 
-    void find_all(Column* result, int64_t value, std::size_t col_offset = 0,
+    void find_all(IntegerColumn* result, int64_t value, std::size_t col_offset = 0,
                   std::size_t begin = 0, std::size_t end = std::size_t(-1)) const;
 
     std::size_t find_first(int64_t value, std::size_t begin = 0,
@@ -685,7 +708,7 @@ public:
 
     template<size_t width> inline bool TestZero(uint64_t value) const;         // Tests value for 0-elements
     template<bool eq, size_t width>size_t FindZero(uint64_t v) const;          // Finds position of 0/non-zero element
-    template<size_t width> uint64_t cascade(uint64_t a) const;                 // Sets uppermost bits of non-zero elements
+    template<size_t width, bool zero> uint64_t cascade(uint64_t a) const;      // Sets lowermost bits of zero or non-zero elements
     template<bool gt, size_t width>int64_t FindGTLT_Magic(int64_t v) const;    // Compute magic constant needed for searching for value 'v' using bit hacks
     template<size_t width> inline int64_t LowerBits() const;                   // Return chunk with lower bit set in each element
     std::size_t FirstSetBit(unsigned int v) const;
@@ -815,6 +838,7 @@ public:
 
     template<class TreeTraits> struct TreeInsert: TreeInsertBase {
         typename TreeTraits::value_type m_value;
+        bool m_nullable;
     };
 
     /// Same as bptree_insert() but insert after the last element.
@@ -839,16 +863,14 @@ public:
 
     /// Like get(const char*, std::size_t) but gets two consecutive
     /// elements.
-    static std::pair<int_least64_t, int_least64_t> get_two(const char* header,
+    static std::pair<int64_t, int64_t> get_two(const char* header,
                                                            std::size_t ndx) REALM_NOEXCEPT;
+
+    static void get_three(const char* data, size_t ndx, ref_type& v0, ref_type& v1, ref_type& v2) REALM_NOEXCEPT;
 
     /// The meaning of 'width' depends on the context in which this
     /// array is used.
     std::size_t get_width() const REALM_NOEXCEPT { return m_width; }
-
-    // FIXME: Should not be mutable
-    // FIXME: Should not be public
-    mutable char* m_data; // Points to first byte after header
 
     static char* get_data_from_header(char*) REALM_NOEXCEPT;
     static char* get_header_from_data(char*) REALM_NOEXCEPT;
@@ -928,12 +950,11 @@ protected:
 
     bool do_erase_bptree_elem(std::size_t elem_ndx, EraseHandler&);
 
-
-    template <IndexMethod method, class T> size_t index_string(StringData value, Column& result, size_t &result_ref, void* column, StringGetter get_func) const;
+    template <IndexMethod method, class T>
+    std::size_t index_string(StringData value, IntegerColumn& result, ref_type& result_ref,
+                             ColumnBase* column) const;
 protected:
 //    void AddPositiveLocal(int64_t value);
-
-    void CreateFromHeaderDirect(char* header, ref_type = 0) REALM_NOEXCEPT;
 
     // Includes array header. Not necessarily 8-byte aligned.
     virtual std::size_t CalcByteLen(std::size_t size, std::size_t width) const;
@@ -990,27 +1011,13 @@ protected:
     void copy_on_write();
 
 private:
-    std::size_t m_ref;
 
     template<size_t w> int64_t sum(size_t start, size_t end) const;
     template<bool max, std::size_t w> bool minmax(int64_t& result, std::size_t start,
                                                   std::size_t end, std::size_t* return_ndx) const;
-protected:
-    std::size_t m_size;     // Number of elements currently stored.
-    std::size_t m_capacity; // Number of elements that fit inside the allocated memory.
-// FIXME: m_width Should be an 'int'
-    std::size_t m_width;    // Size of an element (meaning depend on type of array).
-    bool m_is_inner_bptree_node; // This array is an inner node of B+-tree.
-    bool m_has_refs;        // Elements whose first bit is zero are refs to subarrays.
-    bool m_context_flag;    // Meaning depends on context.
-
-private:
-    ArrayParent* m_parent;
-    std::size_t m_ndx_in_parent; // Ignored if m_parent is null.
+    template<size_t w> std::size_t find_gte(const int64_t target, std::size_t start, Array const* indirection) const;
 
 protected:
-    Allocator& m_alloc;
-
     /// The total size in bytes (including the header) of a new empty
     /// array. Must be a multiple of 8 (i.e., 64-bit aligned).
     static const std::size_t initial_capacity = 128;
@@ -1021,7 +1028,7 @@ protected:
     static MemRef create(Type, bool context_flag, WidthType, std::size_t size,
                          int_fast64_t value, Allocator&);
 
-    static MemRef clone(const char* header, Allocator& alloc, Allocator& target_alloc);
+    static MemRef clone(MemRef header, Allocator& alloc, Allocator& target_alloc);
 
     /// Get the address of the header of this array.
     char* get_header() REALM_NOEXCEPT;
@@ -1052,15 +1059,15 @@ protected:
     typedef bool (Array::*Finder)(int64_t, std::size_t, std::size_t, std::size_t, QueryState<int64_t>*) const;
     typedef void (Array::*ChunkGetter)(size_t, int64_t res[8]) const; // Note: getters must not throw
 
-private:
-    Getter m_getter;
-    ChunkGetter m_chunk_getter;
-    Setter m_setter;
-    Finder m_finder[cond_Count]; // one for each COND_XXX enum
+    struct VTable {
+        Getter getter;
+        ChunkGetter chunk_getter;
+        Setter setter;
+        Finder finder[cond_Count]; // one for each COND_XXX enum
+    };
+    template <size_t w> struct VTableForWidth;
 
 protected:
-    int64_t m_lbound;       // min number that can be stored with current m_width
-    int64_t m_ubound;       // max number that can be stored with current m_width
 
     /// Takes a 64-bit value and returns the minimum number of bits needed
     /// to fit the value. For alignment this is rounded up to nearest
@@ -1071,11 +1078,37 @@ protected:
     void report_memory_usage_2(MemUsageHandler&) const;
 #endif
 
+private:
+    Getter m_getter = nullptr; // cached to avoid indirection
+    const VTable* m_vtable = nullptr;
+
+public:
+    // FIXME: Should not be mutable
+    // FIXME: Should not be public
+    mutable char* m_data = nullptr; // Points to first byte after header
+
+protected:
+    int64_t m_lbound;       // min number that can be stored with current m_width
+    int64_t m_ubound;       // max number that can be stored with current m_width
+
+    std::size_t m_size = 0;     // Number of elements currently stored.
+    std::size_t m_capacity = 0; // Number of elements that fit inside the allocated memory.
+
+    Allocator& m_alloc;
+private:
+    std::size_t m_ref;
+    ArrayParent* m_parent = nullptr;
+    std::size_t m_ndx_in_parent = 0; // Ignored if m_parent is null.
+protected:
+    unsigned char m_width = 0;  // Size of an element (meaning depend on type of array).
+    bool m_is_inner_bptree_node; // This array is an inner node of B+-tree.
+    bool m_has_refs;        // Elements whose first bit is zero are refs to subarrays.
+    bool m_context_flag;    // Meaning depends on context.
+
     friend class SlabAlloc;
     friend class GroupWriter;
-    friend class AdaptiveStringColumn;
+    friend class StringColumn;
 };
-
 
 
 class Array::NodeInfo {
@@ -1158,7 +1191,7 @@ public:
             return false;
     }
 
-    void init(Action action, Column* akku, size_t limit)
+    void init(Action action, IntegerColumn* akku, size_t limit)
     {
         m_match_count = 0;
         m_limit = limit;
@@ -1222,7 +1255,7 @@ public:
             m_match_count = size_t(m_state);
         }
         else if (action == act_FindAll) {
-            Array::add_to_column(reinterpret_cast<Column*>(m_state), index);
+            Array::add_to_column(reinterpret_cast<IntegerColumn*>(m_state), index);
         }
         else if (action == act_ReturnFirst) {
             m_state = index;
@@ -1250,8 +1283,8 @@ public:
 
     void init(Action action, Array*, size_t limit)
     {
-        REALM_STATIC_ASSERT((util::SameType<R, float>::value ||
-                               util::SameType<R, double>::value), "");
+        REALM_STATIC_ASSERT((std::is_same<R, float>::value ||
+                               std::is_same<R, double>::value), "");
         m_match_count = 0;
         m_limit = limit;
         m_minmax_index = not_found;
@@ -1300,9 +1333,6 @@ public:
 
 
 inline Array::Array(Allocator& alloc) REALM_NOEXCEPT:
-    m_data(0),
-    m_parent(0),
-    m_ndx_in_parent(0),
     m_alloc(alloc)
 {
 }
@@ -1316,9 +1346,9 @@ inline Array::Array(no_prealloc_tag) REALM_NOEXCEPT:
 }
 
 
-inline void Array::create(Type type, bool context_flag)
+inline void Array::create(Type type, bool context_flag, size_t size, int_fast64_t value)
 {
-    MemRef mem = create_empty_array(type, context_flag, m_alloc); // Throws
+    MemRef mem = create_array(type, context_flag, size, value, m_alloc); // Throws
     init_from_mem(mem);
 }
 
@@ -1353,7 +1383,7 @@ inline Array::Type Array::get_type() const REALM_NOEXCEPT
 inline void Array::get_chunk(std::size_t ndx, int64_t res[8]) const REALM_NOEXCEPT
 {
     REALM_ASSERT_DEBUG(ndx < m_size);
-    (this->*m_chunk_getter)(ndx, res);
+    (this->*(m_vtable->chunk_getter))(ndx, res);
 }
 
 
@@ -1376,7 +1406,7 @@ inline int64_t Array::get(std::size_t ndx) const REALM_NOEXCEPT
     if (m_width >= 8 && m_size > ndx + 7)
         return get<64>(ndx >> m_shift) & m_widthmask;
     else
-        return (this->*m_getter)(ndx);
+        return (this->*(m_vtable->getter))(ndx);
 */
 }
 
@@ -1435,7 +1465,7 @@ inline void Array::destroy() REALM_NOEXCEPT
         return;
     char* header = get_header_from_data(m_data);
     m_alloc.free_(m_ref, header);
-    m_data = 0;
+    m_data = nullptr;
 }
 
 inline void Array::destroy_deep() REALM_NOEXCEPT
@@ -1448,7 +1478,7 @@ inline void Array::destroy_deep() REALM_NOEXCEPT
 
     char* header = get_header_from_data(m_data);
     m_alloc.free_(m_ref, header);
-    m_data = 0;
+    m_data = nullptr;
 }
 
 
@@ -1789,8 +1819,8 @@ inline std::size_t Array::get_byte_size() const REALM_NOEXCEPT
 
     num_bytes += header_size;
 
-    REALM_ASSERT(m_alloc.is_read_only(m_ref) ||
-                   num_bytes <= get_capacity_from_header(header));
+    REALM_ASSERT_7(m_alloc.is_read_only(m_ref), ==, true, ||,
+                   num_bytes, <=, get_capacity_from_header(header));
 
     return num_bytes;
 }
@@ -1854,13 +1884,13 @@ inline void Array::init_header(char* header, bool is_inner_bptree_node, bool has
 
 inline MemRef Array::clone_deep(Allocator& target_alloc) const
 {
-    const char* header = get_header_from_data(m_data);
-    return clone(header, m_alloc, target_alloc); // Throws
+    char* header = get_header_from_data(m_data);
+    return clone(MemRef(header, m_ref), m_alloc, target_alloc); // Throws
 }
 
 inline void Array::move_assign(Array& a) REALM_NOEXCEPT
 {
-    REALM_ASSERT(&get_alloc() == &a.get_alloc());
+    REALM_ASSERT_3(&get_alloc(), ==, &a.get_alloc());
     // FIXME: Be carefull with the old parent info here. Should it be
     // copied?
 
@@ -1876,8 +1906,14 @@ inline void Array::move_assign(Array& a) REALM_NOEXCEPT
 
 inline MemRef Array::create_empty_array(Type type, bool context_flag, Allocator& alloc)
 {
-    std::size_t size = 0;
+    size_t size = 0;
     int_fast64_t value = 0;
+    return create_array(type, context_flag, size, value, alloc); // Throws
+}
+
+inline MemRef Array::create_array(Type type, bool context_flag, size_t size, int_fast64_t value,
+                                  Allocator& alloc)
+{
     return create(type, context_flag, wtype_Bits, size, value, alloc); // Throws
 }
 
@@ -1923,12 +1959,12 @@ inline ref_type Array::get_ref_from_parent() const REALM_NOEXCEPT
 
 inline bool Array::is_attached() const REALM_NOEXCEPT
 {
-    return m_data != 0;
+    return m_data != nullptr;
 }
 
 inline void Array::detach() REALM_NOEXCEPT
 {
-    m_data = 0;
+    m_data = nullptr;
 }
 
 inline std::size_t Array::size() const REALM_NOEXCEPT
@@ -2208,17 +2244,19 @@ bool Array::find_action_pattern(size_t index, uint64_t pattern, QueryState<int64
 }
 
 
-template<size_t width> uint64_t Array::cascade(uint64_t a) const
+template<size_t width, bool zero> uint64_t Array::cascade(uint64_t a) const
 {
-    // Takes a chunk of values as argument and sets the uppermost bit for each element which is 0. Example:
-    // width == 4 and v = 01000000 00001000 10000001 00001000 00000000 10100100 00001100 00111110 01110100 00010000 00000000 00000001 10000000 01111110
-    // will return:       00001000 00010000 00010000 00010000 00010001 00000000 00010000 00000000 00000000 00000001 00010001 00010000 00000001 00000000
+    // Takes a chunk of values as argument and sets the least significant bit for each
+    // element which is zero or non-zero, depending on the template parameter.
+    // Example for zero=true:
+    // width == 4 and a = 0x5fd07a107610f610
+    // will return:       0x0001000100010001
 
     // static values needed for fast population count
     const uint64_t m1  = 0x5555555555555555ULL;
 
     if (width == 1) {
-        return ~a;
+        return zero ? ~a : a;
     }
     else if (width == 2) {
         // Masks to avoid spillover between segments in cascades
@@ -2226,7 +2264,8 @@ template<size_t width> uint64_t Array::cascade(uint64_t a) const
 
         a |= (a >> 1) & c1; // cascade ones in non-zeroed segments
         a &= m1;     // isolate single bit in each segment
-        a ^= m1;     // reverse isolated bits
+        if (zero)
+            a ^= m1; // reverse isolated bits if checking for zeroed segments
 
         return a;
     }
@@ -2240,7 +2279,8 @@ template<size_t width> uint64_t Array::cascade(uint64_t a) const
         a |= (a >> 1) & c1; // cascade ones in non-zeroed segments
         a |= (a >> 2) & c2;
         a &= m;     // isolate single bit in each segment
-        a ^= m;     // reverse isolated bits
+        if (zero)
+            a ^= m; // reverse isolated bits if checking for zeroed segments
 
         return a;
     }
@@ -2256,7 +2296,8 @@ template<size_t width> uint64_t Array::cascade(uint64_t a) const
         a |= (a >> 2) & c2;
         a |= (a >> 4) & c3;
         a &= m;     // isolate single bit in each segment
-        a ^= m;     // reverse isolated bits
+        if (zero)
+            a ^= m; // reverse isolated bits if checking for zeroed segments
 
         return a;
     }
@@ -2274,7 +2315,8 @@ template<size_t width> uint64_t Array::cascade(uint64_t a) const
         a |= (a >> 4) & c3;
         a |= (a >> 8) & c4;
         a &= m;     // isolate single bit in each segment
-        a ^= m;     // reverse isolated bits
+        if (zero)
+            a ^= m; // reverse isolated bits if checking for zeroed segments
 
         return a;
     }
@@ -2295,12 +2337,13 @@ template<size_t width> uint64_t Array::cascade(uint64_t a) const
         a |= (a >> 8) & c4;
         a |= (a >> 16) & c5;
         a &= m;     // isolate single bit in each segment
-        a ^= m;     // reverse isolated bits
+        if (zero)
+            a ^= m; // reverse isolated bits if checking for zeroed segments
 
         return a;
     }
     else if (width == 64) {
-        return a == 0 ? 1 : 0;
+        return (a == 0) == zero;
     }
     else {
         REALM_ASSERT_DEBUG(false);
@@ -2397,8 +2440,10 @@ template<class cond2, Action action, size_t bitwidth, class Callback> bool Array
     REALM_ASSERT_3(m_width, !=, 0);
 
 #if defined(REALM_COMPILER_SSE)
-    if ((sseavx<42>() &&                                        (end - start >= sizeof (__m128i) && m_width >= 8))
-    ||  (sseavx<30>() && (util::SameType<cond2, Equal>::value && end - start >= sizeof (__m128i) && m_width >= 8 && m_width < 64))) {
+    // Only use SSE if payload is at least one SSE chunk (128 bits) in size. Also note taht SSE doesn't support 
+    // Less-than comparison for 64-bit values. 
+    if ((!(std::is_same<cond2, Less>::value && m_width == 64)) && end - start >= sizeof(__m128i) && m_width >= 8 &&
+        (sseavx<42>() || (sseavx<30>() && std::is_same<cond2, Equal>::value && m_width < 64))) {
 
         // FindSSE() must start at 16-byte boundary, so search area before that using CompareEquality()
         __m128i* const a = reinterpret_cast<__m128i*>(round_up(m_data + start * bitwidth / 8, sizeof (__m128i)));
@@ -2736,7 +2781,7 @@ template<bool eq, Action action, size_t width, class Callback> inline bool Array
 
             while (eq ? TestZero<width>(v2) : v2) {
 
-                if (find_action_pattern<action, Callback>(start + baseindex, cascade<width>(eq ? v2 : ~v2), state, callback))
+                if (find_action_pattern<action, Callback>(start + baseindex, cascade<width, eq>(v2), state, callback))
                     break; // consumed
 
                 size_t t = FindZero<eq, width>(v2);
@@ -2773,7 +2818,7 @@ template<bool eq, Action action, size_t width, class Callback> inline bool Array
 // There exists a couple of find() functions that take more or less template arguments. Always call the one that
 // takes as most as possible to get best performance.
 
-// This is the one installed into the m_finder slots.
+// This is the one installed into the m_vtable->finder slots.
 template<class cond, Action action, size_t bitwidth>
 bool Array::find(int64_t value, size_t start, size_t end, size_t baseindex, QueryState<int64_t>* state) const
 {
@@ -2810,7 +2855,10 @@ bool Array::FindSSE(int64_t value, __m128i *data, size_t items, QueryState<int64
     else if (width == 32)
         search = _mm_set1_epi32(static_cast<int>(value));
     else if (width == 64) {
-        search = _mm_set_epi64x(value, value);
+        if (cond2::condition == cond_Less)
+            REALM_ASSERT(false);
+        else
+            search = _mm_set_epi64x(value, value);
     }
 
     return FindSSE_intern<cond2, action, width, Callback>(data, &search, items, state, baseindex, callback);
@@ -2857,15 +2905,12 @@ REALM_FORCEINLINE bool Array::FindSSE_intern(__m128i* action_data, __m128i* data
         else if (cond == cond_Less) {
             if (width == 8)
                 compare = _mm_cmplt_epi8(action_data[i], *data);
-            if (width == 16)
+            else if (width == 16)
                 compare = _mm_cmplt_epi16(action_data[i], *data);
-            if (width == 32)
+            else if (width == 32)
                 compare = _mm_cmplt_epi32(action_data[i], *data);
-            if (width == 64){
-                // There exists no _mm_cmplt_epi64 instruction, so emulate it. _mm_set1_epi8(0xff) is pre-calculated by compiler.
-                compare = _mm_cmpeq_epi64(action_data[i], *data);
-                compare = _mm_andnot_si128(compare, _mm_set1_epi32(0xffffffff));
-            }
+            else
+                REALM_ASSERT(false);
         }
 
         resmask = _mm_movemask_epi8(compare);
@@ -3222,7 +3267,7 @@ template<class cond> size_t Array::find_first(int64_t value, size_t start, size_
     REALM_ASSERT(start <= m_size && (end <= m_size || end == std::size_t(-1)) && start <= end);
     QueryState<int64_t> state;
     state.init(act_ReturnFirst, nullptr, 1); // todo, would be nice to avoid this in order to speed up find_first loops
-    Finder finder = m_finder[cond::condition];
+    Finder finder = m_vtable->finder[cond::condition];
     (this->*finder)(value, start, end, 0, &state);
 
     return static_cast<size_t>(state.m_state);

@@ -33,14 +33,16 @@
 @implementation RLMObject
 
 // synthesized in RLMObjectBase
-@dynamic invalidated;
+@dynamic invalidated, realm, objectSchema;
 
 - (instancetype)init {
     return [super init];
 }
 
 - (instancetype)initWithValue:(id)value {
-    return [super initWithValue:value schema:RLMSchema.sharedSchema];
+    [self.class sharedSchema]; // ensure this class' objectSchema is loaded in the partialSharedSchema
+    RLMSchema *schema = RLMSchema.partialSharedSchema;
+    return [super initWithValue:value schema:schema];
 }
 
 - (instancetype)initWithObject:(id)object {
@@ -48,7 +50,7 @@
 }
 
 + (instancetype)createInDefaultRealmWithValue:(id)value {
-    return (RLMObject *)RLMCreateObjectInRealmWithValue([RLMRealm defaultRealm], [self className], value, RLMCreationOptionsAllowCopy);
+    return (RLMObject *)RLMCreateObjectInRealmWithValue([RLMRealm defaultRealm], [self className], value, false);
 }
 
 + (instancetype)createInDefaultRealmWithObject:(id)object {
@@ -56,7 +58,7 @@
 }
 
 + (instancetype)createInRealm:(RLMRealm *)realm withValue:(id)value {
-    return (RLMObject *)RLMCreateObjectInRealmWithValue(realm, [self className], value, RLMCreationOptionsAllowCopy);
+    return (RLMObject *)RLMCreateObjectInRealmWithValue(realm, [self className], value, false);
 }
 
 + (instancetype)createInRealm:(RLMRealm *)realm withObject:(id)object {
@@ -78,7 +80,7 @@
         NSString *reason = [NSString stringWithFormat:@"'%@' does not have a primary key and can not be updated", schema.className];
         @throw [NSException exceptionWithName:@"RLMExecption" reason:reason userInfo:nil];
     }
-    return (RLMObject *)RLMCreateObjectInRealmWithValue(realm, [self className], value, RLMCreationOptionsUpdateOrCreate | RLMCreationOptionsAllowCopy);
+    return (RLMObject *)RLMCreateObjectInRealmWithValue(realm, [self className], value, true);
 }
 
 + (instancetype)createOrUpdateInRealm:(RLMRealm *)realm withObject:(id)object {
@@ -91,14 +93,6 @@
 
 - (void)setObject:(id)obj forKeyedSubscript:(NSString *)key {
     RLMObjectBaseSetObjectForKeyedSubscript(self, key, obj);
-}
-
-- (RLMRealm *)realm {
-    return _realm;
-}
-
-- (RLMObjectSchema *)objectSchema {
-    return _objectSchema;
 }
 
 + (RLMResults *)allObjects {
@@ -173,16 +167,20 @@
     return nil;
 }
 
++ (NSArray *)requiredProperties {
+    return nil;
+}
+
 @end
 
 @implementation RLMDynamicObject
 
-+ (BOOL)shouldPersistToRealm {
++ (BOOL)shouldIncludeInDefaultSchema {
     return NO;
 }
 
 - (id)valueForUndefinedKey:(NSString *)key {
-    return RLMDynamicGet(self, key);
+    return RLMDynamicGet(self, RLMValidatedGetProperty(self, key));
 }
 
 - (void)setValue:(id)value forUndefinedKey:(NSString *)key {

@@ -24,10 +24,11 @@
 #include <map>
 #include <utility>
 #include <typeinfo>
+#include <memory>
 
 #include <realm/util/features.h>
+#include <realm/util/thread.hpp>
 #include <realm/util/tuple.hpp>
-#include <memory>
 #include <realm/column_fwd.hpp>
 #include <realm/table_ref.hpp>
 #include <realm/link_view_fwd.hpp>
@@ -46,10 +47,10 @@ class TableViewBase;
 class ConstTableView;
 class StringIndex;
 class Group;
-class ColumnLinkBase;
-class ColumnLink;
-class ColumnLinkList;
-class ColumnBackLink;
+class LinkColumnBase;
+class LinkColumn;
+class LinkListColumn;
+class BacklinkColumn;
 template<class> class Columns;
 
 struct Link {};
@@ -57,9 +58,7 @@ typedef Link LinkList;
 
 namespace _impl { class TableFriend; }
 
-#ifdef REALM_ENABLE_REPLICATION
 class Replication;
-#endif
 
 
 /// The Table class is non-polymorphic, that is, it has no virtual
@@ -105,6 +104,8 @@ public:
     Table(const Table&, Allocator& = Allocator::get_default());
 
     ~Table() REALM_NOEXCEPT;
+
+    Allocator& get_alloc() const;
 
     /// Construct a new freestanding top-level table with dynamic lifetime.
     static TableRef create(Allocator& = Allocator::get_default());
@@ -153,6 +154,9 @@ public:
     /// string.
     StringData get_name() const REALM_NOEXCEPT;
 
+    // Whether or not elements can be null.
+    bool is_nullable(size_t col_ndx) const;
+
     //@{
     /// Conventience functions for inspecting the dynamic table type.
     ///
@@ -185,9 +189,22 @@ public:
     ///
     /// \sa has_shared_type()
     /// \sa get_descriptor()
-    std::size_t add_column(DataType type, StringData name, DescriptorRef* subdesc = 0);
-    void insert_column(std::size_t column_ndx, DataType type, StringData name,
+
+    std::size_t add_column(DataType type, StringData name, bool nullable = false, DescriptorRef* subdesc = 0);
+    void insert_column(std::size_t column_ndx, DataType type, StringData name, bool nullable = false,
                        DescriptorRef* subdesc = 0);
+
+    // Todo, these prototypes only exist for backwards compatibility. We should remove them because they are error
+    // prone (optional arguments and implicit bool to null-ptr conversion)
+    std::size_t add_column(DataType type, StringData name, DescriptorRef* subdesc)
+    {
+        return add_column(type, name, false, subdesc);
+    }
+    void insert_column(std::size_t column_ndx, DataType type, StringData name, DescriptorRef* subdesc)
+    {
+        insert_column(column_ndx, type, name, false, subdesc);
+    }
+
     std::size_t add_column_link(DataType type, StringData name, Table& target, LinkType link_type = link_Weak);
     void insert_column_link(std::size_t column_ndx, DataType type, StringData name, Table& target,
                             LinkType link_type = link_Weak);
@@ -231,6 +248,7 @@ public:
     /// \param column_ndx The index of a column of this table.
 
     bool has_search_index(std::size_t column_ndx) const REALM_NOEXCEPT;
+//    void remove_search_index(size_t col_ndx);
     void add_search_index(std::size_t column_ndx);
     void remove_search_index(std::size_t column_ndx);
     bool has_primary_key() const REALM_NOEXCEPT;
@@ -377,37 +395,6 @@ public:
 
     //@}
 
-
-    //@{
-
-    /// Insert row
-    ///
-    /// NOTE: You have to insert values in ALL columns followed by
-    /// insert_done(). The values must be inserted in column index order.
-    ///
-    /// Restrictions apply to strings and binary data values. See set_string(),
-    /// set_binary(), and set_mixed() for more.
-    ///
-    /// It is an error to insert a value into a column that is part of a primary
-    /// key, if that would result in a violation the implied *unique constraint*
-    /// of the primary key. The consequenses of doing so are unspecified.
-
-    void insert_int(std::size_t column_ndx, std::size_t row_ndx, int64_t value);
-    void insert_bool(std::size_t column_ndx, std::size_t row_ndx, bool value);
-    void insert_datetime(std::size_t column_ndx, std::size_t row_ndx, DateTime value);
-    template<class E> void insert_enum(std::size_t column_ndx, std::size_t row_ndx, E value);
-    void insert_float(std::size_t column_ndx, std::size_t row_ndx, float value);
-    void insert_double(std::size_t column_ndx, std::size_t row_ndx, double value);
-    void insert_string(std::size_t column_ndx, std::size_t row_ndx, StringData value);
-    void insert_binary(std::size_t column_ndx, std::size_t row_ndx, BinaryData value);
-    void insert_subtable(std::size_t column_ndx, std::size_t row_ndx); // Insert empty table
-    void insert_mixed(std::size_t column_ndx, std::size_t row_ndx, Mixed value);
-    void insert_link(std::size_t column_ndx, std::size_t row_ndx, std::size_t target_row_ndx);
-    void insert_linklist(std::size_t column_ndx, std::size_t row_ndx); // Insert empty link list
-    void insert_done();
-
-    //@}
-
     // Get cell values
     int64_t     get_int(std::size_t column_ndx, std::size_t row_ndx) const REALM_NOEXCEPT;
     bool        get_bool(std::size_t column_ndx, std::size_t row_ndx) const REALM_NOEXCEPT;
@@ -424,6 +411,7 @@ public:
     ConstLinkViewRef get_linklist(std::size_t column_ndx, std::size_t row_ndx) const;
     std::size_t get_link_count(std::size_t column_ndx, std::size_t row_ndx) const REALM_NOEXCEPT;
     bool linklist_is_empty(std::size_t column_ndx, std::size_t row_ndx) const REALM_NOEXCEPT;
+    bool is_null(std::size_t column_ndx, std::size_t row_ndx) const REALM_NOEXCEPT;
 
     TableRef get_link_target(std::size_t column_ndx) REALM_NOEXCEPT;
     ConstTableRef get_link_target(std::size_t column_ndx) const REALM_NOEXCEPT;
@@ -459,10 +447,9 @@ public:
     void set_mixed(std::size_t column_ndx, std::size_t row_ndx, Mixed value);
     void set_link(std::size_t column_ndx, std::size_t row_ndx, std::size_t target_row_ndx);
     void nullify_link(std::size_t column_ndx, std::size_t row_ndx);
+    void set_null(std::size_t column_ndx, std::size_t row_ndx);
 
     //@}
-
-    void add_int(std::size_t column_ndx, int64_t value);
 
     /// Assumes that the specified column is a subtable column (in
     /// particular, not a mixed column) and that the specified table
@@ -470,12 +457,6 @@ public:
     /// number of columns must be the same, and corresponding columns
     /// must have identical data types (as returned by
     /// get_column_type()).
-    void insert_subtable(std::size_t col_ndx, std::size_t row_ndx, const Table*);
-    void insert_mixed_subtable(std::size_t col_ndx, std::size_t row_ndx, const Table*);
-
-    /// Like insert_subtable(std::size_t, std::size_t, const Table*)
-    /// but overwrites the specified cell rather than inserting a new
-    /// one.
     void set_subtable(std::size_t col_ndx, std::size_t row_ndx, const Table*);
     void set_mixed_subtable(std::size_t col_ndx, std::size_t row_ndx, const Table*);
 
@@ -560,6 +541,7 @@ public:
     std::size_t    find_first_double(std::size_t column_ndx, double value) const;
     std::size_t    find_first_string(std::size_t column_ndx, StringData value) const;
     std::size_t    find_first_binary(std::size_t column_ndx, BinaryData value) const;
+    std::size_t    find_first_null(std::size_t column_ndx) const;
 
     TableView      find_all_link(size_t target_row_index);
     ConstTableView find_all_link(size_t target_row_index) const;
@@ -577,6 +559,8 @@ public:
     ConstTableView find_all_string(std::size_t column_ndx, StringData value) const;
     TableView      find_all_binary(std::size_t column_ndx, BinaryData value);
     ConstTableView find_all_binary(std::size_t column_ndx, BinaryData value) const;
+    TableView      find_all_null(std::size_t column_ndx);
+    ConstTableView find_all_null(std::size_t column_ndx) const;
 
     /// The following column types are supported: String, Integer, DateTime, Bool
     TableView      get_distinct_view(std::size_t column_ndx);
@@ -619,7 +603,7 @@ public:
     };
 
     // Simple pivot aggregate method. Experimental! Please do not document method publicly.
-    void aggregate(size_t group_by_column, size_t aggr_column, AggrType op, Table& result, const Column* viewrefs = nullptr) const;
+    void aggregate(size_t group_by_column, size_t aggr_column, AggrType op, Table& result, const IntegerColumn* viewrefs = nullptr) const;
 
 
 private:
@@ -672,18 +656,19 @@ public:
     // Queries
     // Using where(tv) is the new method to perform queries on TableView. The 'tv' can have any order; it does not
     // need to be sorted, and, resulting view retains its order.
-    Query where(RowIndexes* tv = nullptr) { return Query(*this, tv); }
+    Query where(TableViewBase* tv = nullptr) { return Query(*this, tv); }
 
     // FIXME: We need a ConstQuery class or runtime check against modifications in read transaction.
-    Query where(RowIndexes* tv = nullptr) const { return Query(*this, tv); }
+    Query where(TableViewBase* tv = nullptr) const { return Query(*this, tv); }
 
     // Perform queries on a LinkView. The returned Query holds a reference to lv.
     Query where(const LinkViewRef& lv) { return Query(*this, lv); }
 
     Table& link(size_t link_column);
 
-    // Optimizing
-    void optimize();
+    // Optimizing. enforce == true will enforce enumeration of all string columns;
+    // enforce == false will auto-evaluate if they should be enumerated or not
+    void optimize(bool enforce = false);
 
     /// Write this table (or a slice of this table) to the specified
     /// output stream.
@@ -776,8 +761,6 @@ protected:
     /// index (as expressed through the DataType enum).
     bool compare_rows(const Table&) const;
 
-    void insert_into(Table* parent, std::size_t col_ndx, std::size_t row_ndx) const;
-
     void set_into_mixed(Table* parent, std::size_t col_ndx, std::size_t row_ndx) const;
 
 private:
@@ -844,11 +827,14 @@ private:
     mutable Descriptor* m_descriptor;
 
     // Table view instances
-    typedef std::vector<const TableViewBase*> views;
+    typedef std::vector<TableViewBase*> views;
     mutable views m_views;
 
     // Points to first bound row accessor, or is null if there are none.
-    mutable RowBase* m_row_accessors;
+    mutable RowBase* m_row_accessors = nullptr;
+
+    // Mutex which must be locked any time the row accessor chain or m_views is used
+    mutable util::Mutex m_accessor_mutex;
 
     // Used for queries: Items are added with link() method during buildup of query
     mutable std::vector<size_t> m_link_chain;
@@ -857,14 +843,16 @@ private:
     /// Table::refresh_accessor_tree().
     mutable bool m_mark;
 
-#ifdef REALM_ENABLE_REPLICATION
     mutable uint_fast64_t m_version;
-#endif
 
-    void do_remove(std::size_t row_ndx);
-    void do_move_last_over(std::size_t row_ndx, bool broken_reciprocal_backlinks);
+    void erase_row(size_t row_ndx, bool is_move_last_over);
+    void batch_erase_rows(const IntegerColumn& row_indexes, bool is_move_last_over);
+    void do_remove(size_t row_ndx, bool broken_reciprocal_backlinks);
+    void do_move_last_over(size_t row_ndx, bool broken_reciprocal_backlinks);
     void do_clear(bool broken_reciprocal_backlinks);
     std::size_t do_set_link(std::size_t col_ndx, std::size_t row_ndx, std::size_t target_row_ndx);
+
+    void upgrade_file_format();
 
     /// Update the version of this table and all tables which have links to it.
     /// This causes all views referring to those tables to go out of sync, so that
@@ -916,7 +904,7 @@ private:
     std::size_t do_find_pkey_string(StringData) const;
 
     static void do_insert_column(Descriptor&, std::size_t col_ndx, DataType type,
-                                 StringData name, Table* link_target_table);
+                                 StringData name, Table* link_target_table, bool nullable = false);
     static void do_erase_column(Descriptor&, std::size_t col_ndx);
     static void do_rename_column(Descriptor&, std::size_t col_ndx, StringData name);
 
@@ -925,9 +913,9 @@ private:
     struct RenameSubtableColumns;
 
     void insert_root_column(std::size_t col_ndx, DataType type, StringData name,
-                            Table* link_target_table);
+                            Table* link_target_table, bool nullable = false);
     void erase_root_column(std::size_t col_ndx);
-    void do_insert_root_column(std::size_t col_ndx, ColumnType, StringData name);
+    void do_insert_root_column(std::size_t col_ndx, ColumnType, StringData name, bool nullable = false);
     void do_erase_root_column(std::size_t col_ndx);
     void do_set_link_type(std::size_t col_ndx, LinkType);
     void insert_backlink_column(std::size_t origin_table_ndx, std::size_t origin_col_ndx);
@@ -935,7 +923,7 @@ private:
     void update_link_target_tables(std::size_t old_col_ndx_begin, std::size_t new_col_ndx_begin);
 
     struct SubtableUpdater {
-        virtual void update(const ColumnTable&, Array& subcolumns) = 0;
+        virtual void update(const SubtableColumn&, Array& subcolumns) = 0;
         virtual void update_accessor(Table&) = 0;
         virtual ~SubtableUpdater() {}
     };
@@ -1017,6 +1005,7 @@ private:
 
     void register_row_accessor(RowBase*) const REALM_NOEXCEPT;
     void unregister_row_accessor(RowBase*) const REALM_NOEXCEPT;
+    void do_unregister_row_accessor(RowBase*) const REALM_NOEXCEPT;
 
     class UnbindGuard;
 
@@ -1026,38 +1015,36 @@ private:
     /// otherwise null is returned.
     Group* get_parent_group() const REALM_NOEXCEPT;
 
-    const Array* get_column_root(std::size_t col_ndx) const REALM_NOEXCEPT;
-    std::pair<const Array*, const Array*> get_string_column_roots(std::size_t col_ndx) const
-        REALM_NOEXCEPT;
-
     const ColumnBase& get_column_base(std::size_t column_ndx) const REALM_NOEXCEPT;
     ColumnBase& get_column_base(std::size_t column_ndx);
     template <class T, ColumnType col_type> T& get_column(std::size_t ndx);
     template <class T, ColumnType col_type> const T& get_column(std::size_t ndx) const REALM_NOEXCEPT;
-    Column& get_column(std::size_t column_ndx);
-    const Column& get_column(std::size_t column_ndx) const REALM_NOEXCEPT;
-    ColumnFloat& get_column_float(std::size_t column_ndx);
-    const ColumnFloat& get_column_float(std::size_t column_ndx) const REALM_NOEXCEPT;
-    ColumnDouble& get_column_double(std::size_t column_ndx);
-    const ColumnDouble& get_column_double(std::size_t column_ndx) const REALM_NOEXCEPT;
-    AdaptiveStringColumn& get_column_string(std::size_t column_ndx);
-    const AdaptiveStringColumn& get_column_string(std::size_t column_ndx) const REALM_NOEXCEPT;
-    ColumnBinary& get_column_binary(std::size_t column_ndx);
-    const ColumnBinary& get_column_binary(std::size_t column_ndx) const REALM_NOEXCEPT;
-    ColumnStringEnum& get_column_string_enum(std::size_t column_ndx);
-    const ColumnStringEnum& get_column_string_enum(std::size_t column_ndx) const REALM_NOEXCEPT;
-    ColumnTable& get_column_table(std::size_t column_ndx);
-    const ColumnTable& get_column_table(std::size_t column_ndx) const REALM_NOEXCEPT;
-    ColumnMixed& get_column_mixed(std::size_t column_ndx);
-    const ColumnMixed& get_column_mixed(std::size_t column_ndx) const REALM_NOEXCEPT;
-    const ColumnLinkBase& get_column_link_base(std::size_t ndx) const REALM_NOEXCEPT;
-    ColumnLinkBase& get_column_link_base(std::size_t ndx);
-    const ColumnLink& get_column_link(std::size_t ndx) const REALM_NOEXCEPT;
-    ColumnLink& get_column_link(std::size_t ndx);
-    const ColumnLinkList& get_column_link_list(std::size_t ndx) const REALM_NOEXCEPT;
-    ColumnLinkList& get_column_link_list(std::size_t ndx);
-    const ColumnBackLink& get_column_backlink(std::size_t ndx) const REALM_NOEXCEPT;
-    ColumnBackLink& get_column_backlink(std::size_t ndx);
+    IntegerColumn& get_column(std::size_t column_ndx);
+    const IntegerColumn& get_column(std::size_t column_ndx) const REALM_NOEXCEPT;
+    IntNullColumn& get_column_int_null(std::size_t column_ndx);
+    const IntNullColumn& get_column_int_null(std::size_t column_ndx) const REALM_NOEXCEPT;
+    FloatColumn& get_column_float(std::size_t column_ndx);
+    const FloatColumn& get_column_float(std::size_t column_ndx) const REALM_NOEXCEPT;
+    DoubleColumn& get_column_double(std::size_t column_ndx);
+    const DoubleColumn& get_column_double(std::size_t column_ndx) const REALM_NOEXCEPT;
+    StringColumn& get_column_string(std::size_t column_ndx);
+    const StringColumn& get_column_string(std::size_t column_ndx) const REALM_NOEXCEPT;
+    BinaryColumn& get_column_binary(std::size_t column_ndx);
+    const BinaryColumn& get_column_binary(std::size_t column_ndx) const REALM_NOEXCEPT;
+    StringEnumColumn& get_column_string_enum(std::size_t column_ndx);
+    const StringEnumColumn& get_column_string_enum(std::size_t column_ndx) const REALM_NOEXCEPT;
+    SubtableColumn& get_column_table(std::size_t column_ndx);
+    const SubtableColumn& get_column_table(std::size_t column_ndx) const REALM_NOEXCEPT;
+    MixedColumn& get_column_mixed(std::size_t column_ndx);
+    const MixedColumn& get_column_mixed(std::size_t column_ndx) const REALM_NOEXCEPT;
+    const LinkColumnBase& get_column_link_base(std::size_t ndx) const REALM_NOEXCEPT;
+    LinkColumnBase& get_column_link_base(std::size_t ndx);
+    const LinkColumn& get_column_link(std::size_t ndx) const REALM_NOEXCEPT;
+    LinkColumn& get_column_link(std::size_t ndx);
+    const LinkListColumn& get_column_link_list(std::size_t ndx) const REALM_NOEXCEPT;
+    LinkListColumn& get_column_link_list(std::size_t ndx);
+    const BacklinkColumn& get_column_backlink(std::size_t ndx) const REALM_NOEXCEPT;
+    BacklinkColumn& get_column_backlink(std::size_t ndx);
 
     void instantiate_before_change();
     void validate_column_type(const ColumnBase& column, ColumnType expected_type,
@@ -1077,7 +1064,7 @@ private:
     /// Create a column of the specified type, fill it with the
     /// specified number of default values, and return just the
     /// reference to the underlying memory.
-    static ref_type create_column(ColumnType column_type, size_t num_default_values, Allocator&);
+    static ref_type create_column(ColumnType column_type, size_t num_default_values, bool nullable, Allocator&);
 
     /// Construct a copy of the columns array of this table using the
     /// specified allocator and return just the ref to that array.
@@ -1170,17 +1157,15 @@ private:
     /// state.stop_on_link_list_column must be null.
     ///
     /// It is immaterial which table remove_backlink_broken_rows() is called on,
-    /// as long it that table is in the same group as the specified rows.
+    /// as long it that table is in the same group as the removed rows.
 
-    typedef ColumnBase::CascadeState CascadeState;
-    void cascade_break_backlinks_to(std::size_t row_ndx, CascadeState& state);
+    void cascade_break_backlinks_to(size_t row_ndx, CascadeState& state);
     void cascade_break_backlinks_to_all_rows(CascadeState& state);
-    void remove_backlink_broken_rows(const CascadeState::row_set&);
+    void remove_backlink_broken_rows(const CascadeState&);
 
     //@}
 
-    /// Remove the specified row by the 'move last over' method, and submit the
-    /// operation to the replication subsystem.
+    /// Remove the specified row by the 'move last over' method.
     void do_move_last_over(std::size_t row_ndx);
 
     // Precondition: 1 <= end - begin
@@ -1262,9 +1247,7 @@ private:
     void mark_link_target_tables(std::size_t col_ndx_begin) REALM_NOEXCEPT;
     void mark_opposite_link_tables() REALM_NOEXCEPT;
 
-#ifdef REALM_ENABLE_REPLICATION
     Replication* get_repl() REALM_NOEXCEPT;
-#endif
 
     void set_ndx_in_parent(std::size_t ndx_in_parent) REALM_NOEXCEPT;
 
@@ -1326,6 +1309,7 @@ private:
     friend class LinksToNode;
     friend class LinkMap;
     friend class LinkView;
+    friend class Group;
 };
 
 
@@ -1369,8 +1353,6 @@ protected:
 // Implementation:
 
 
-#ifdef REALM_ENABLE_REPLICATION
-
 inline void Table::bump_version(bool bump_global) const REALM_NOEXCEPT
 {
     if (bump_global) {
@@ -1397,14 +1379,17 @@ inline void Table::bump_version(bool bump_global) const REALM_NOEXCEPT
     }
 }
 
-#else // REALM_ENABLE_REPLICATION
-
-inline void Table::bump_version(bool) const REALM_NOEXCEPT
+inline void Table::remove(size_t row_ndx)
 {
-    // No-op when replication is disabled at compile time
+    bool is_move_last_over = false;
+    erase_row(row_ndx, is_move_last_over); // Throws;
 }
 
-#endif // REALM_ENABLE_REPLICATION
+inline void Table::move_last_over(size_t row_ndx)
+{
+    bool is_move_last_over = true;
+    erase_row(row_ndx, is_move_last_over); // Throws;
+}
 
 inline void Table::remove_last()
 {
@@ -1414,7 +1399,10 @@ inline void Table::remove_last()
 
 inline void Table::register_view(const TableViewBase* view)
 {
-    m_views.push_back(view);
+    // Casting away constness here - operations done on tableviews
+    // through m_views are all internal and preserving "some" kind
+    // of logical constness.
+    m_views.push_back(const_cast<TableViewBase*>(view));
 }
 
 inline bool Table::is_attached() const REALM_NOEXCEPT
@@ -1437,7 +1425,7 @@ inline StringData Table::get_name() const REALM_NOEXCEPT
     const Array& real_top = m_top.is_attached() ? m_top : m_columns;
     ArrayParent* parent = real_top.get_parent();
     if (!parent)
-        return StringData();
+        return StringData("");
     std::size_t index_in_parent = real_top.get_ndx_in_parent();
     REALM_ASSERT(dynamic_cast<Parent*>(parent));
     return static_cast<Parent*>(parent)->get_child_name(index_in_parent);
@@ -1546,11 +1534,10 @@ inline Table::Table(Allocator& alloc):
     m_spec(alloc)
 {
     m_ref_count = 1; // Explicitely managed lifetime
-    m_descriptor = 0;
-    m_row_accessors = 0;
+    m_descriptor = nullptr;
 
     ref_type ref = create_empty_table(alloc); // Throws
-    Parent* parent = 0;
+    Parent* parent = nullptr;
     std::size_t ndx_in_parent = 0;
     init(ref, parent, ndx_in_parent);
 }
@@ -1561,11 +1548,10 @@ inline Table::Table(const Table& t, Allocator& alloc):
     m_spec(alloc)
 {
     m_ref_count = 1; // Explicitely managed lifetime
-    m_descriptor = 0;
-    m_row_accessors = 0;
+    m_descriptor = nullptr;
 
     ref_type ref = t.clone(alloc); // Throws
-    Parent* parent = 0;
+    Parent* parent = nullptr;
     std::size_t ndx_in_parent = 0;
     init(ref, parent, ndx_in_parent);
 }
@@ -1576,15 +1562,19 @@ inline Table::Table(ref_count_tag, Allocator& alloc):
     m_spec(alloc)
 {
     m_ref_count = 0; // Lifetime managed by reference counting
-    m_descriptor = 0;
-    m_row_accessors = 0;
+    m_descriptor = nullptr;
+}
+
+inline Allocator& Table::get_alloc() const
+{
+    return m_top.get_alloc();
 }
 
 inline TableRef Table::create(Allocator& alloc)
 {
     std::unique_ptr<Table> table(new Table(ref_count_tag(), alloc)); // Throws
     ref_type ref = create_empty_table(alloc); // Throws
-    Parent* parent = 0;
+    Parent* parent = nullptr;
     std::size_t ndx_in_parent = 0;
     table->init(ref, parent, ndx_in_parent); // Throws
     return table.release()->get_table_ref();
@@ -1594,7 +1584,7 @@ inline TableRef Table::copy(Allocator& alloc) const
 {
     std::unique_ptr<Table> table(new Table(ref_count_tag(), alloc)); // Throws
     ref_type ref = clone(alloc); // Throws
-    Parent* parent = 0;
+    Parent* parent = nullptr;
     std::size_t ndx_in_parent = 0;
     table->init(ref, parent, ndx_in_parent); // Throws
     return table.release()->get_table_ref();
@@ -1604,7 +1594,7 @@ inline TableRef Table::copy(Allocator& alloc) const
 template<class T> inline Columns<T> Table::column(std::size_t column)
 {
     std::vector<size_t> tmp = m_link_chain;
-    if (util::SameType<T, Link>::value || util::SameType<T, LinkList>::value) {
+    if (std::is_same<T, Link>::value || std::is_same<T, LinkList>::value) {
         tmp.push_back(column);
     }
     m_link_chain.clear();
@@ -1682,27 +1672,6 @@ inline const Table* Table::get_subtable_ptr(std::size_t col_ndx, std::size_t row
     return const_cast<Table*>(this)->get_subtable_ptr(col_ndx, row_ndx); // Throws
 }
 
-inline void Table::insert_bool(std::size_t column_ndx, std::size_t row_ndx, bool value)
-{
-    insert_int(column_ndx, row_ndx, value);
-}
-
-inline void Table::insert_datetime(std::size_t column_ndx, std::size_t row_ndx, DateTime value)
-{
-    insert_int(column_ndx, row_ndx, value.get_datetime());
-}
-
-template<class E>
-inline void Table::insert_enum(std::size_t column_ndx, std::size_t row_ndx, E value)
-{
-    insert_int(column_ndx, row_ndx, value);
-}
-
-inline void Table::insert_subtable(std::size_t col_ndx, std::size_t row_ndx)
-{
-    insert_subtable(col_ndx, row_ndx, 0); // Null stands for an empty table
-}
-
 inline bool Table::is_null_link(std::size_t col_ndx, std::size_t row_ndx) const REALM_NOEXCEPT
 {
     return get_link(col_ndx, row_ndx) == realm::npos;
@@ -1751,7 +1720,7 @@ inline bool Table::is_group_level() const REALM_NOEXCEPT
 
 inline Table::RowExpr Table::find_pkey_int(int_fast64_t value)
 {
-    Table* table = 0;
+    Table* table = nullptr;
     std::size_t row_ndx = do_find_pkey_int(value); // Throws
     if (row_ndx != realm::not_found)
         table = this;
@@ -1760,7 +1729,7 @@ inline Table::RowExpr Table::find_pkey_int(int_fast64_t value)
 
 inline Table::ConstRowExpr Table::find_pkey_int(int_fast64_t value) const
 {
-    const Table* table = 0;
+    const Table* table = nullptr;
     std::size_t row_ndx = do_find_pkey_int(value); // Throws
     if (row_ndx != realm::not_found)
         table = this;
@@ -1769,7 +1738,7 @@ inline Table::ConstRowExpr Table::find_pkey_int(int_fast64_t value) const
 
 inline Table::RowExpr Table::find_pkey_string(StringData value)
 {
-    Table* table = 0;
+    Table* table = nullptr;
     std::size_t row_ndx = do_find_pkey_string(value); // Throws
     if (row_ndx != realm::not_found)
         table = this;
@@ -1778,7 +1747,7 @@ inline Table::RowExpr Table::find_pkey_string(StringData value)
 
 inline Table::ConstRowExpr Table::find_pkey_string(StringData value) const
 {
-    const Table* table = 0;
+    const Table* table = nullptr;
     std::size_t row_ndx = do_find_pkey_string(value); // Throws
     if (row_ndx != realm::not_found)
         table = this;
@@ -1800,14 +1769,9 @@ inline bool Table::is_degenerate() const REALM_NOEXCEPT
     return !m_columns.is_attached();
 }
 
-inline void Table::insert_into(Table* parent, std::size_t col_ndx, std::size_t row_ndx) const
-{
-    parent->insert_subtable(col_ndx, row_ndx, this);
-}
-
 inline void Table::set_into_mixed(Table* parent, std::size_t col_ndx, std::size_t row_ndx) const
 {
-    parent->insert_mixed_subtable(col_ndx, row_ndx, this);
+    parent->set_mixed_subtable(col_ndx, row_ndx, this);
 }
 
 inline std::size_t Table::get_size_from_ref(ref_type top_ref, Allocator& alloc) REALM_NOEXCEPT
@@ -1874,12 +1838,10 @@ inline void Table::unmark() REALM_NOEXCEPT
     m_mark = false;
 }
 
-#ifdef REALM_ENABLE_REPLICATION
 inline Replication* Table::get_repl() REALM_NOEXCEPT
 {
     return m_top.get_alloc().get_replication();
 }
-#endif
 
 inline void Table::set_ndx_in_parent(std::size_t ndx_in_parent) REALM_NOEXCEPT
 {
@@ -2023,7 +1985,8 @@ public:
 
     static void do_remove(Table& table, std::size_t row_ndx)
     {
-        table.do_remove(row_ndx); // Throws
+        bool broken_reciprocal_backlinks = false;
+        table.do_remove(row_ndx, broken_reciprocal_backlinks); // Throws
     }
 
     static void do_move_last_over(Table& table, std::size_t row_ndx)
@@ -2051,12 +2014,12 @@ public:
     }
 
     static void cascade_break_backlinks_to(Table& table, std::size_t row_ndx,
-                                           Table::CascadeState& state)
+                                           CascadeState& state)
     {
         table.cascade_break_backlinks_to(row_ndx, state); // Throws
     }
 
-    static void remove_backlink_broken_rows(Table& table, const Table::CascadeState::row_set& rows)
+    static void remove_backlink_broken_rows(Table& table, const CascadeState& rows)
     {
         table.remove_backlink_broken_rows(rows); // Throws
     }
@@ -2068,9 +2031,9 @@ public:
     }
 
     static void insert_column(Descriptor& desc, std::size_t column_ndx, DataType type,
-                              StringData name, Table* link_target_table)
+                              StringData name, Table* link_target_table, bool nullable = false)
     {
-        Table::do_insert_column(desc, column_ndx, type, name, link_target_table); // Throws
+        Table::do_insert_column(desc, column_ndx, type, name, link_target_table, nullable); // Throws
     }
 
     static void erase_column(Descriptor& desc, std::size_t column_ndx)
@@ -2091,7 +2054,7 @@ public:
     static void clear_root_table_desc(const Table& root_table) REALM_NOEXCEPT
     {
         REALM_ASSERT(!root_table.has_shared_type());
-        root_table.m_descriptor = 0;
+        root_table.m_descriptor = nullptr;
     }
 
     static Table* get_subtable_accessor(Table& table, std::size_t col_ndx,
@@ -2227,12 +2190,10 @@ public:
         return table.is_cross_table_link_target();
     }
 
-#ifdef REALM_ENABLE_REPLICATION
     static Replication* get_repl(Table& table) REALM_NOEXCEPT
     {
         return table.get_repl();
     }
-#endif
 };
 
 

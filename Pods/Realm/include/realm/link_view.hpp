@@ -25,11 +25,10 @@
 #include <realm/column_linklist.hpp>
 #include <realm/link_view_fwd.hpp>
 #include <realm/table.hpp>
-#include <realm/table_view.hpp>
 
 namespace realm {
 
-class ColumnLinkList;
+class LinkListColumn;
 
 namespace _impl {
 class LinkListFriend;
@@ -64,7 +63,12 @@ public:
     void add(std::size_t target_row_ndx);
     void insert(std::size_t link_ndx, std::size_t target_row_ndx);
     void set(std::size_t link_ndx, std::size_t target_row_ndx);
+    /// Moves the link currently at `old_link_ndx` to `new_link_ndx`,
+    /// such that after the move, `get(new_link_ndx)` returns what
+    /// `get(old_link_ndx)` would have returned before the move.
+    /// The relative order of all other links in the list is preserved.
     void move(std::size_t old_link_ndx, std::size_t new_link_ndx);
+    void swap(std::size_t link1_ndx, std::size_t link2_ndx);
     void remove(std::size_t link_ndx);
     void clear();
 
@@ -88,9 +92,9 @@ public:
     /// by its index in the target table). If found, the index of the link to
     /// that row within this list is returned, otherwise `realm::not_found` is
     /// returned.
-    std::size_t find(std::size_t target_row_ndx) const REALM_NOEXCEPT;
+    std::size_t find(std::size_t target_row_ndx, std::size_t start=0) const REALM_NOEXCEPT;
 
-    const ColumnBase& get_column_base(size_t index) const;
+    const ColumnBase& get_column_base(size_t index) const; // FIXME: `ColumnBase` is not part of the public API, so this function must be made private.
     const Table& get_origin_table() const REALM_NOEXCEPT;
     Table& get_origin_table() REALM_NOEXCEPT;
 
@@ -101,14 +105,18 @@ public:
 
 private:
     TableRef m_origin_table;
-    ColumnLinkList& m_origin_column;
+    LinkListColumn& m_origin_column;
     mutable std::size_t m_ref_count;
 
+    typedef LinkView_Handover_patch Handover_patch;
+    static void generate_patch(const ConstLinkViewRef& ref, std::unique_ptr<Handover_patch>& patch);
+    static LinkViewRef create_from_and_consume_patch(std::unique_ptr<Handover_patch>& patch, Group& group);
+
     // constructor (protected since it can only be used by friends)
-    LinkView(Table* origin_table, ColumnLinkList&, std::size_t row_ndx);
+    LinkView(Table* origin_table, LinkListColumn&, std::size_t row_ndx);
 
     void detach();
-    void set_origin_row_index(std::size_t row_ndx);
+    void set_origin_row_index(std::size_t row_ndx) REALM_NOEXCEPT;
 
     std::size_t do_set(std::size_t link_ndx, std::size_t target_row_ndx);
     std::size_t do_remove(std::size_t link_ndx);
@@ -124,28 +132,29 @@ private:
 
     void update_from_parent(std::size_t old_baseline) REALM_NOEXCEPT;
 
-#ifdef REALM_ENABLE_REPLICATION
     Replication* get_repl() REALM_NOEXCEPT;
     void repl_unselect() REALM_NOEXCEPT;
     friend class _impl::TransactLogConvenientEncoder;
-#endif
 
 #ifdef REALM_DEBUG
     void Verify(std::size_t row_ndx) const;
 #endif
 
     friend class _impl::LinkListFriend;
-    friend class ColumnLinkList;
+    friend class LinkListColumn;
     friend class util::bind_ptr<LinkView>;
     friend class util::bind_ptr<const LinkView>;
     friend class LangBindHelper;
+    friend class SharedGroup;
+    friend class Query;
+    friend class TableViewBase;
 };
 
 
 // Implementation
 
-inline LinkView::LinkView(Table* origin_table, ColumnLinkList& column, std::size_t row_ndx):
-    RowIndexes(Column::unattached_root_tag(), column.get_alloc()), // Throws
+inline LinkView::LinkView(Table* origin_table, LinkListColumn& column, std::size_t row_ndx):
+    RowIndexes(IntegerColumn::unattached_root_tag(), column.get_alloc()), // Throws
     m_origin_table(origin_table->get_table_ref()),
     m_origin_column(column),
     m_ref_count(0)
@@ -159,9 +168,7 @@ inline LinkView::LinkView(Table* origin_table, ColumnLinkList& column, std::size
 inline LinkView::~LinkView() REALM_NOEXCEPT
 {
     if (is_attached()) {
-#ifdef REALM_ENABLE_REPLICATION
         repl_unselect();
-#endif
         m_origin_column.unregister_linkview(*this);
     }
 }
@@ -182,9 +189,7 @@ inline void LinkView::unbind_ref() const REALM_NOEXCEPT
 inline void LinkView::detach()
 {
     REALM_ASSERT(is_attached());
-#ifdef REALM_ENABLE_REPLICATION
     repl_unselect();
-#endif
     m_origin_table.reset();
     m_row_indexes.detach();
 }
@@ -242,7 +247,7 @@ inline Table::RowExpr LinkView::get(std::size_t link_ndx) REALM_NOEXCEPT
 {
     REALM_ASSERT(is_attached());
     REALM_ASSERT(m_row_indexes.is_attached());
-    REALM_ASSERT(link_ndx < m_row_indexes.size());
+    REALM_ASSERT_3(link_ndx, <, m_row_indexes.size());
 
     Table& target_table = m_origin_column.get_target_table();
     std::size_t target_row_ndx = to_size_t(m_row_indexes.get(link_ndx));
@@ -266,15 +271,16 @@ inline void LinkView::add(std::size_t target_row_ndx)
     insert(ins_pos, target_row_ndx);
 }
 
-inline std::size_t LinkView::find(std::size_t target_row_ndx) const REALM_NOEXCEPT
+inline std::size_t LinkView::find(std::size_t target_row_ndx, std::size_t start) const REALM_NOEXCEPT
 {
     REALM_ASSERT(is_attached());
-    REALM_ASSERT(target_row_ndx < m_origin_column.get_target_table().size());
+    REALM_ASSERT_3(target_row_ndx, <, m_origin_column.get_target_table().size());
+    REALM_ASSERT_3(start, <=, size());
 
     if (!m_row_indexes.is_attached())
         return not_found;
 
-    return m_row_indexes.find_first(target_row_ndx);
+    return m_row_indexes.find_first(target_row_ndx, start);
 }
 
 inline const ColumnBase& LinkView::get_column_base(size_t index) const
@@ -298,7 +304,7 @@ inline std::size_t LinkView::get_origin_row_index() const REALM_NOEXCEPT
     return m_row_indexes.get_root_array()->get_ndx_in_parent();
 }
 
-inline void LinkView::set_origin_row_index(std::size_t row_ndx)
+inline void LinkView::set_origin_row_index(std::size_t row_ndx) REALM_NOEXCEPT
 {
     REALM_ASSERT(is_attached());
     m_row_indexes.get_root_array()->set_ndx_in_parent(row_ndx);
@@ -332,13 +338,11 @@ inline void LinkView::update_from_parent(std::size_t old_baseline) REALM_NOEXCEP
         m_row_indexes.update_from_parent(old_baseline);
 }
 
-#ifdef REALM_ENABLE_REPLICATION
 inline Replication* LinkView::get_repl() REALM_NOEXCEPT
 {
     typedef _impl::TableFriend tf;
     return tf::get_repl(*m_origin_table);
 }
-#endif
 
 
 // The purpose of this class is to give internal access to some, but not all of

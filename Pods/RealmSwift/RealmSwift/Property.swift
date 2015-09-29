@@ -27,7 +27,7 @@ introspecting the database's schema.
 
 These properties map to columns in the core database.
 */
-public final class Property: Printable {
+public final class Property: CustomStringConvertible {
 
     // MARK: Properties
 
@@ -41,6 +41,9 @@ public final class Property: Printable {
 
     /// Whether this property is indexed.
     public var indexed: Bool { return rlmProperty.indexed }
+
+    ///  Whether this property is optional (can contain `nil` values).
+    public var optional: Bool { return rlmProperty.optional }
 
     /// Object class name - specify object types for `Object` and `List` properties.
     public var objectClassName: String? { return rlmProperty.objectClassName }

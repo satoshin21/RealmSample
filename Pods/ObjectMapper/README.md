@@ -1,7 +1,8 @@
 ObjectMapper
 ============
-
-<!-- [![Build Status](https://travis-ci.org/Hearst-DD/ObjectMapper.svg?branch=master)](https://travis-ci.org/Hearst-DD/ObjectMapper) -->
+[![CocoaPods](https://img.shields.io/cocoapods/v/ObjectMapper.svg)](https://github.com/Hearst-DD/ObjectMapper)
+[![Carthage compatible](https://img.shields.io/badge/Carthage-compatible-4BC51D.svg?style=flat)](https://github.com/Carthage/Carthage)
+[![Build Status](https://travis-ci.org/Hearst-DD/ObjectMapper.svg?branch=master)](https://travis-ci.org/Hearst-DD/ObjectMapper)
 
 ObjectMapper is a framework written in Swift that makes it easy for you to convert your Model objects (Classes and Structs) to and from JSON. 
 
@@ -10,6 +11,8 @@ ObjectMapper is a framework written in Swift that makes it easy for you to conve
 - [Mapping Nested Objects](#easy-mapping-of-nested-objects)
 - [Custom Transformations](#custom-transfoms)
 - [Subclassing](#subclasses)
+- [ObjectMapper + Alamofire](#objectmapper--alamofire) 
+- [ObjectMapper + Realm](#objectmapper--realm)
 - [Contributing](#contributing)
 - [Installation](#installation)
 
@@ -24,7 +27,7 @@ ObjectMapper is a framework written in Swift that makes it easy for you to conve
 To support mapping, a Class or Struct just needs to implement the ```Mappable``` protocol.
 ```swift
 public protocol Mappable {
-    init?(_ map: Map)
+	init?(_ map: Map)
     mutating func mapping(map: Map)
 }
 ```
@@ -41,9 +44,9 @@ class User: Mappable {
     var friends: [User]?                        // Array of Users
     var birthday: NSDate?
 
-    required init?(_ map: Map) {
-        mapping(map)
-    }
+	required init?(_ map: Map){
+
+	}
 
     // Mappable
     func mapping(map: Map) {
@@ -62,11 +65,9 @@ struct Temperature: Mappable {
     var celcius: Double?
     var fahrenheit: Double?
 
-    init(){}
+	required init?(_ map: Map){
 
-    init?(_ map: Map) {
-        mapping(map)
-    }
+	}
 
 	mutating func mapping(map: Map) {
 		celcius 	<- map["celcius"]
@@ -93,11 +94,14 @@ Object mapper can map classes composed of the following types:
 - Double
 - Float
 - String
+- RawRepresentable (Enums)
 - Array\<AnyObject\>
 - Dictionary\<String, AnyObject\>
 - Object\<T: Mappable\>
 - Array\<T: Mappable\>
+- Set\<T: Mappable\> 
 - Dictionary\<String, T: Mappable\>
+- Dictionary\<String, Array\<T: Mappable\>\>
 - Optionals of all the above
 - Implicitly Unwrapped Optionals of the above
 
@@ -110,9 +114,15 @@ ObjectMapper supports dot notation within keys for easy mapping of nested object
 }
 ```
 You can access the nested objects as follows:
-```
+```swift
 func mapping(map: Map){
     distance <- map["distance.value"]
+}
+```
+If you have a key that contains `.`, you can disable the above feature as follows:
+```swift
+func mapping(map: Map){
+    identifier <- map["app.inditifier", nested: false]
 }
 ```
 
@@ -158,13 +168,13 @@ id <- (map["id"], TransformOf<Int, String>(fromJSON: { $0?.toInt() }, toJSON: { 
 ```
 
 #Subclasses
-Classes that implement the Mappable protocol can easily be subclassed. When subclassing Mappable classes, follow the structure below:
+Classes that implement the Mappable protocol can easily be subclassed. When subclassing Mappable classes, follow the structure below (note that you must use the `class` keyword instead of `static`):
 ```
 class Base: Mappable {
 	var base: String?
 	
-	required init?(_ map: Map) {
-		mapping(map)
+	required init?(_ map: Map){
+
 	}
 
 	func mapping(map: Map) {
@@ -175,7 +185,7 @@ class Base: Mappable {
 class Subclass: Base {
 	var sub: String?
 
-	required init?(_ map: Map) {
+	required init?(_ map: Map){
 		super.init(map)
 	}
 
@@ -185,6 +195,31 @@ class Subclass: Base {
 		sub <- map["sub"]
 	}
 }
+```
+
+#ObjectMapper + Alamofire
+
+If you are using [Alamofire](https://github.com/Alamofire/Alamofire) for networking and you want to convert your responses to swift objects, you can use [AlamofireObjectMapper](https://github.com/tristanhimmelman/AlamofireObjectMapper). It is a simple Alamofire extension that uses ObjectMapper to automatically map JSON response data to swift objects.
+
+
+#ObjectMapper + Realm
+
+ObjectMapper and Realm can be used together. Simply follow the Class structure below and you will be able to use ObjectMapper to generate your Realm models:
+
+```swift
+class Model: Object, Mappable {
+	dynamic var name = ""
+
+	required convenience init?(_ map: Map) {
+		self.init()
+	}
+
+	func mapping(map: Map) {
+		name <- map["name"]
+	}
+}
+
+Note: Generating a JSON string of a Realm Object using ObjectMappers' `toJSON` function only works within a Realm write transaction. This is caused because ObjectMapper uses the `inout` flag in its mapping functions (`<-`) which are used both for serializing and deserializing. Realm detects the flag and forces the `toJSON` function to be called within a write block even though the objects are not being modified.
 ```
 
 <!-- ##To Do -->
@@ -204,12 +239,12 @@ From this point on, you should open the project using ObjectMapper.xcworkspace a
 #Installation
 ObjectMapper can be added to your project using [Cocoapods 0.36 (beta)](http://blog.cocoapods.org/Pod-Authors-Guide-to-CocoaPods-Frameworks/) by adding the following line to your Podfile:
 ```
-pod 'ObjectMapper', '~> 0.10'
+pod 'ObjectMapper', '~> 0.16'
 ```
 
 If your using [Carthage](https://github.com/Carthage/Carthage) you can add a dependency on ObjectMapper by adding it to your Cartfile:
 ```
-github "Hearst-DD/ObjectMapper" ~> 0.10
+github "Hearst-DD/ObjectMapper" ~> 0.16
 ```
 
 Otherwise, ObjectMapper can be added as a submodule:

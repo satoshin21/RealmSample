@@ -41,7 +41,7 @@ public:
     void clear();
 
     std::size_t find_first(T value, std::size_t begin = 0 , std::size_t end = npos) const;
-    void find_all(Column* result, T value, std::size_t add_offset = 0,
+    void find_all(IntegerColumn* result, T value, std::size_t add_offset = 0,
                   std::size_t begin = 0, std::size_t end = npos) const;
 
     std::size_t count(T value, std::size_t begin = 0, std::size_t end = npos) const;
@@ -86,9 +86,9 @@ public:
 private:
     std::size_t find(T target, std::size_t begin, std::size_t end) const;
 
-    virtual std::size_t CalcByteLen(std::size_t count, std::size_t width) const;
-    virtual std::size_t CalcItemCount(std::size_t bytes, std::size_t width) const REALM_NOEXCEPT;
-    virtual WidthType GetWidthType() const { return wtype_Multiply; }
+    std::size_t CalcByteLen(std::size_t count, std::size_t width) const override;
+    virtual std::size_t CalcItemCount(std::size_t bytes, std::size_t width) const REALM_NOEXCEPT override;
+    virtual WidthType GetWidthType() const override { return wtype_Multiply; }
 
     template<bool find_max> bool minmax(T& result, std::size_t begin, std::size_t end) const;
 

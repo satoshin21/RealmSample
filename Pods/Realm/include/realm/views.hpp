@@ -3,29 +3,36 @@
 
 #include <realm/column.hpp>
 #include <realm/column_string_enum.hpp>
+#include <realm/handover_defs.hpp>
+#include <realm/index_string.hpp>
 
-using namespace realm;
+namespace realm {
 
-// This class is for common functionality of ListView and LinkView which inherit from it. Currently it only 
+const std::size_t detached_ref = std::size_t(-1);
+
+// This class is for common functionality of ListView and LinkView which inherit from it. Currently it only
 // supports sorting.
 class RowIndexes
 {
 public:
-    RowIndexes(Column::unattached_root_tag urt, realm::Allocator& alloc) : 
-#ifdef REALM_COOKIE_CHECK
-        cookie(cookie_expected), 
-#endif
-        m_row_indexes(urt, alloc), m_auto_sort(false) 
-    {}
-
-    RowIndexes(Column&& col) : 
+    RowIndexes(IntegerColumn::unattached_root_tag urt, realm::Allocator& alloc) :
 #ifdef REALM_COOKIE_CHECK
         cookie(cookie_expected),
-#endif      
-        m_row_indexes(std::move(col)), m_auto_sort(false) 
+#endif
+        m_row_indexes(urt, alloc)
     {}
 
-    virtual ~RowIndexes() 
+    RowIndexes(IntegerColumn&& col) :
+#ifdef REALM_COOKIE_CHECK
+        cookie(cookie_expected),
+#endif
+        m_row_indexes(std::move(col))
+    {}
+
+    RowIndexes(const RowIndexes& source, ConstSourcePayload mode);
+    RowIndexes(RowIndexes& source, MutableSourcePayload mode);
+
+    virtual ~RowIndexes()
     {
 #ifdef REALM_COOKIE_CHECK
         cookie = 0x7765697633333333; // 0x77656976 = 'view'; 0x33333333 = '3333' = destructed
@@ -57,11 +64,11 @@ public:
         bool operator()(size_t i, size_t j) const
         {
             for (size_t t = 0; t < m_columns.size(); t++) {
-                // todo/fixme, special treatment of ColumnStringEnum by calling ColumnStringEnum::compare_values()
-                // instead of the general ColumnTemplate::compare_values() becuse it cannot overload inherited 
-                // `int64_t get_val()` of Column. Such column inheritance needs to be cleaned up 
+                // todo/fixme, special treatment of StringEnumColumn by calling StringEnumColumn::compare_values()
+                // instead of the general ColumnTemplate::compare_values() becuse it cannot overload inherited
+                // `int64_t get_val()` of Column. Such column inheritance needs to be cleaned up
                 int c;
-                if (const ColumnStringEnum* cse = m_string_enum_columns[t])
+                if (const StringEnumColumn* cse = m_string_enum_columns[t])
                     c = cse->compare_values(i, j);
                 else
                     c = m_columns[t]->compare_values(i, j);
@@ -83,7 +90,7 @@ public:
                 const ColumnBase& cb = row_indexes->get_column_base(m_column_indexes[i]);
                 const ColumnTemplateBase* ctb = dynamic_cast<const ColumnTemplateBase*>(&cb);
                 REALM_ASSERT(ctb);
-                if (const ColumnStringEnum* cse = dynamic_cast<const ColumnStringEnum*>(&cb))
+                if (const StringEnumColumn* cse = dynamic_cast<const StringEnumColumn*>(&cb))
                     m_string_enum_columns[i] = cse;
                 else
                     m_columns[i] = ctb;
@@ -93,26 +100,19 @@ public:
         std::vector<size_t> m_column_indexes;
         std::vector<bool> m_ascending;
         std::vector<const ColumnTemplateBase*> m_columns;
-        std::vector<const ColumnStringEnum*> m_string_enum_columns;
+        std::vector<const StringEnumColumn*> m_string_enum_columns;
     };
 
-    // Sort m_row_indexes according to one column
-    void sort(size_t column, bool ascending = true);
-
-    // Sort m_row_indexes according to multiple columns
-    void sort(std::vector<size_t> columns, std::vector<bool> ascending);
-
-    // Re-sort view according to last used criterias
-    void re_sort();
+    void sort(Sorter& sorting_predicate);
 
 #ifdef REALM_COOKIE_CHECK
     static const uint64_t cookie_expected = 0x7765697677777777ull; // 0x77656976 = 'view'; 0x77777777 = '7777' = alive
     uint64_t cookie;
 #endif
 
-    Column m_row_indexes;
-    Sorter m_sorting_predicate; // Stores sorting criterias (columns + ascending)
-    bool m_auto_sort;
+    IntegerColumn m_row_indexes;
 };
+
+} // namespace realm
 
 #endif // REALM_VIEWS_HPP
