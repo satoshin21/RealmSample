@@ -31,11 +31,15 @@ class ViewController: UITableViewController {
         
         self.updateTableView()
         
+        // get Hatena hotentries
         Alamofire.request(.GET, hotEntryUrl).responseJSON { (request, response, result) -> Void in
+            
             if result.isFailure {
+                // FIXME:you need to handle errors.
                 return
             }
             
+            // write request result to realm database
             let json = JSON(result.value!)
             let entries = json["responseData"]["feed"]["entries"]
             realm.beginWrite()
@@ -54,6 +58,10 @@ class ViewController: UITableViewController {
         
     }
     
+    /**
+     select entry data from realm db
+     and update table view with selected data.
+     */
     func updateTableView() {
 
         do {
@@ -65,13 +73,8 @@ class ViewController: UITableViewController {
         
         tableView.reloadData()
     }
-
-    override func didReceiveMemoryWarning() {
-        super.didReceiveMemoryWarning()
-    }
-
     
-    
+    // MARK:- UITableView DataSource / Delegate
     override func tableView(tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         if let entries = entries {
             return entries.count
