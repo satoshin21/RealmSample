@@ -11,7 +11,6 @@ import Alamofire
 import ObjectMapper
 import AlamofireObjectMapper
 import SwiftyJSON
-import Realm
 import RealmSwift
 
 class ViewController: UITableViewController {
@@ -23,7 +22,7 @@ class ViewController: UITableViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        self.tableView.separatorStyle = .None
+        tableView.separatorStyle = .None
         
         guard let realm = try? Realm() else {
             // FIXME: you need to handle errors.
@@ -38,7 +37,6 @@ class ViewController: UITableViewController {
             }
             
             let json = JSON(result.value!)
-            response?.statusCode
             let entries = json["responseData"]["feed"]["entries"]
             realm.beginWrite()
             for (_, subJson) : (String, JSON) in entries {
@@ -65,7 +63,7 @@ class ViewController: UITableViewController {
             })
         }catch {}
         
-        tableView?.reloadData()
+        tableView.reloadData()
     }
 
     override func didReceiveMemoryWarning() {
@@ -107,7 +105,9 @@ class ViewController: UITableViewController {
     
     override func tableView(tableView: UITableView, didSelectRowAtIndexPath indexPath: NSIndexPath) {
         let entry = entries![indexPath.row]
-        UIApplication.sharedApplication().openURL(NSURL(string: entry.link)!)
+        if let link = NSURL(string: entry.link) {
+            UIApplication.sharedApplication().openURL(link)
+        }
     }
 }
 
