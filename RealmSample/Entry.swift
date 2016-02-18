@@ -8,9 +8,9 @@
 
 import UIKit
 import ObjectMapper
-import Realm
+import RealmSwift
 
-class Entry : RLMObject {
+class Entry : Object {
     
     dynamic var content : String = ""
     dynamic var link : String = ""

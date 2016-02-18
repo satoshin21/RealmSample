@@ -17,7 +17,7 @@
 		638415961B0328A400336821 /* RealmSampleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 638415951B0328A400336821 /* RealmSampleTests.swift */; };
 		6394F0C71B0345D2001E382D /* Entry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6394F0C61B0345D2001E382D /* Entry.swift */; };
 		63D57F2C1B037BA100ED2C06 /* NSDate+Formatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63D57F2B1B037BA100ED2C06 /* NSDate+Formatter.swift */; };
-		FAF96512D64EB73BF13FD146 /* Pods.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C8C7E8BC789C32DB3DF3A6B9 /* Pods.framework */; settings = {ATTRIBUTES = (Weak, ); }; };
+		FAF96512D64EB73BF13FD146 /* Pods.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C8C7E8BC789C32DB3DF3A6B9 /* Pods.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */

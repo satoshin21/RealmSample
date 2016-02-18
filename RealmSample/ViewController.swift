@@ -12,21 +12,25 @@ import ObjectMapper
 import AlamofireObjectMapper
 import SwiftyJSON
 import Realm
+import RealmSwift
 
 class ViewController: UITableViewController {
     
     let hotEntryUrl = "https://ajax.googleapis.com/ajax/services/feed/load?v=1.0&q=http://b.hatena.ne.jp/hotentry/it.rss&num=100"
     
-    var entryArray : RLMResults?
+    var entries : [(Entry)]?
     
     override func viewDidLoad() {
         super.viewDidLoad()
 
         self.tableView.separatorStyle = .None
         
-        let realm = RLMRealm.defaultRealm()
-        self.updateTableView()
+        guard let realm = try? Realm() else {
+            // FIXME: you need to handle errors.
+            return
+        }
         
+        self.updateTableView()
         
         Alamofire.request(.GET, hotEntryUrl).responseJSON { (request, response, result) -> Void in
             if result.isFailure {
@@ -36,19 +40,31 @@ class ViewController: UITableViewController {
             let json = JSON(result.value!)
             response?.statusCode
             let entries = json["responseData"]["feed"]["entries"]
-            realm.beginWriteTransaction()
+            realm.beginWrite()
             for (_, subJson) : (String, JSON) in entries {
                 let entry : Entry = Mapper<Entry>().map(subJson.dictionaryObject)!
-                realm.addOrUpdateObject(entry)
+                realm.add(entry, update: true)
             }
-            realm.commitWriteTransaction()
+            
+            do {
+                try realm.commitWrite()
+            } catch {
+                
+            }
             self.updateTableView()
         }
         
     }
     
     func updateTableView() {
-        entryArray = Entry.allObjects().sortedResultsUsingProperty("publishedDate", ascending: true)
+
+        do {
+            self.entries = try Realm().objects(Entry).sort({ (entry1, entry2) -> Bool in
+            let res = entry1.publishedDate.compare(entry2.publishedDate)
+            return (res == .OrderedAscending || res == .OrderedSame)
+            })
+        }catch {}
+        
         tableView?.reloadData()
     }
 
@@ -59,22 +75,30 @@ class ViewController: UITableViewController {
     
     
     override func tableView(tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        let count = Entry.allObjects().count
-        return  Int(count)
+        if let entries = entries {
+            return entries.count
+        }
+        return 0
     }
     
     override func tableView(tableView: UITableView, cellForRowAtIndexPath indexPath: NSIndexPath) -> UITableViewCell {
         
-        let cellIdentifier = "CellIdentifier"
-        let cell : EntryTableViewCell? = tableView.dequeueReusableCellWithIdentifier(cellIdentifier) as? EntryTableViewCell
+        let cell  = tableView.dequeueReusableCellWithIdentifier("CellIdentifier") as! EntryTableViewCell
         
-        let entry = Entry.allObjects().objectAtIndex(UInt(indexPath.row)) as? Entry
+        // if entries have been nil,"cellForRowAtIndexPath:indexPath:" isn't called.
+        let entry = entries![indexPath.row]
         
-        let date : NSDate = entry!.publishedDate
-        cell!.titleLabel!.text = entry!.title
-        cell!.descriptionLabel!.text = entry!.contentSnippet
+        // date format.
+        let df = NSDateFormatter()
+        df.locale = NSLocale(localeIdentifier: "ja_JP")
+        df.timeZone = NSTimeZone.systemTimeZone()
+        df.dateFormat = "MM/dd"
+        let dateStr = df.stringFromDate(entry.publishedDate)
         
-        return cell!
+        cell.titleLabel.text = [dateStr,entry.title].joinWithSeparator(" ")
+        cell.descriptionLabel.text = entry.contentSnippet
+        
+        return cell
     }
 
     override func tableView(tableView: UITableView, heightForRowAtIndexPath indexPath: NSIndexPath) -> CGFloat {
@@ -82,8 +106,8 @@ class ViewController: UITableViewController {
     }
     
     override func tableView(tableView: UITableView, didSelectRowAtIndexPath indexPath: NSIndexPath) {
-        let entry : Entry? = Entry.allObjects().objectAtIndex(UInt(indexPath.row)) as? Entry
-        UIApplication.sharedApplication().openURL(NSURL(string: entry!.link)!)
+        let entry = entries![indexPath.row]
+        UIApplication.sharedApplication().openURL(NSURL(string: entry.link)!)
     }
 }
 

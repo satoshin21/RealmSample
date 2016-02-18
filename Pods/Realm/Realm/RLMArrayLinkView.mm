@@ -28,6 +28,8 @@
 #import "RLMSchema.h"
 #import "RLMUtil.hpp"
 
+#import "results.hpp"
+
 #import <realm/table_view.hpp>
 #import <objc/runtime.h>
 
@@ -59,9 +61,8 @@
 void RLMValidateArrayObservationKey(__unsafe_unretained NSString *const keyPath,
                                     __unsafe_unretained RLMArray *const array) {
     if (![keyPath isEqualToString:RLMInvalidatedKey]) {
-        NSString *err = [NSString stringWithFormat:@"[<%@ %p> addObserver:forKeyPath:options:context:] is not supported. Key path: %@",
-                         [array class], array, keyPath];
-        @throw RLMException(err);
+        @throw RLMException(@"[<%@ %p> addObserver:forKeyPath:options:context:] is not supported. Key path: %@",
+                            [array class], array, keyPath);
     }
 }
 
@@ -85,24 +86,24 @@ static inline void RLMLinkViewArrayValidateAttached(__unsafe_unretained RLMArray
     if (!ar->_backingLinkView->is_attached()) {
         @throw RLMException(@"RLMArray is no longer valid");
     }
-    RLMCheckThread(ar->_realm);
+    [ar->_realm verifyThread];
 }
 static inline void RLMLinkViewArrayValidateInWriteTransaction(__unsafe_unretained RLMArrayLinkView *const ar) {
     // first verify attached
     RLMLinkViewArrayValidateAttached(ar);
 
-    if (!ar->_realm->_inWriteTransaction) {
+    if (!ar->_realm.inWriteTransaction) {
         @throw RLMException(@"Can't mutate a persisted array outside of a write transaction.");
     }
 }
 static inline void RLMValidateObjectClass(__unsafe_unretained RLMObjectBase *const obj, __unsafe_unretained NSString *const expected) {
     if (!obj) {
-        @throw RLMException(@"Object is `nil`", @{@"expected class" : expected});
+        @throw RLMException(@"Cannot add `nil` to RLMArray<%@>", expected);
     }
 
     NSString *objectClassName = obj->_objectSchema.className;
     if (![objectClassName isEqualToString:expected]) {
-        @throw RLMException(@"Object type is incorrect.", @{@"expected class" : expected, @"actual class" : objectClassName});
+        @throw RLMException(@"Cannot add object of type '%@' to RLMArray<%@>", objectClassName, expected);
     }
 }
 
@@ -185,8 +186,8 @@ static void RLMValidateArrayBounds(__unsafe_unretained RLMArrayLinkView *const a
                                    NSUInteger index, bool allowOnePastEnd=false) {
     NSUInteger max = ar->_backingLinkView->size() + allowOnePastEnd;
     if (index >= max) {
-        @throw RLMException([NSString stringWithFormat:@"Index %llu is out of bounds (must be less than %llu).",
-                             (unsigned long long)index, (unsigned long long)max]);
+        @throw RLMException(@"Index %llu is out of bounds (must be less than %llu).",
+                             (unsigned long long)index, (unsigned long long)max);
     }
 }
 
@@ -211,7 +212,9 @@ static void RLMInsertObject(RLMArrayLinkView *ar, RLMObject *object, NSUInteger 
         [ar.realm addObject:object];
     }
     else if (object->_realm) {
-        RLMVerifyAttached(object);
+        if (!object->_row.is_attached()) {
+            @throw RLMException(@"Object has been deleted or invalidated.");
+        }
     }
 
     changeArray(ar, NSKeyValueChangeInsertion, index, ^{
@@ -239,9 +242,10 @@ static void RLMInsertObject(RLMArrayLinkView *ar, RLMObject *object, NSUInteger 
             if (obj->_realm != _realm) {
                 [_realm addObject:obj];
             }
-            else {
-                RLMVerifyAttached(obj);
+            else if (!obj->_row.is_attached()) {
+                @throw RLMException(@"Object has been deleted or invalidated.");
             }
+
             _backingLinkView->insert(index, obj->_row.get_index());
             index = [indexes indexGreaterThanIndex:index];
         }
@@ -343,8 +347,8 @@ static void RLMInsertObject(RLMArrayLinkView *ar, RLMObject *object, NSUInteger 
 
     // check that object types align
     if (![_objectClassName isEqualToString:object->_objectSchema.className]) {
-        @throw RLMException([NSString stringWithFormat:@"Object of type (%@) does not match RLMArray type (%@)",
-                             object->_objectSchema.className, _objectClassName]);
+        @throw RLMException(@"Object of type (%@) does not match RLMArray type (%@)",
+                            object->_objectSchema.className, _objectClassName);
     }
 
     // if different tables then no match
@@ -355,6 +359,17 @@ static void RLMInsertObject(RLMArrayLinkView *ar, RLMObject *object, NSUInteger 
     // call find on backing array
     size_t object_ndx = object->_row.get_index();
     return RLMConvertNotFound(_backingLinkView->find(object_ndx));
+}
+
+- (id)valueForKeyPath:(NSString *)keyPath {
+    if ([keyPath hasPrefix:@"@"]) {
+        // Delegate KVC collection operators to RLMResults
+        realm::Query query = _backingLinkView->get_target_table().where(_backingLinkView);
+        RLMResults *results = [RLMResults resultsWithObjectSchema:_realm.schema[self.objectClassName]
+                                                          results:realm::Results(_realm->_realm, std::move(query))];
+        return [results valueForKeyPath:keyPath];
+    }
+    return [super valueForKeyPath:keyPath];
 }
 
 - (id)valueForKey:(NSString *)key {
@@ -389,12 +404,11 @@ static void RLMInsertObject(RLMArrayLinkView *ar, RLMObject *object, NSUInteger 
 - (RLMResults *)sortedResultsUsingDescriptors:(NSArray *)properties {
     RLMLinkViewArrayValidateAttached(self);
 
-    auto query = std::make_unique<realm::Query>(_backingLinkView->get_target_table().where(_backingLinkView));
-    return [RLMResults resultsWithObjectClassName:self.objectClassName
-                                            query:move(query)
-                                             sort:RLMSortOrderFromDescriptors(_realm.schema[_objectClassName], properties)
-                                            realm:_realm];
-
+    auto results = realm::Results(_realm->_realm,
+                                  _backingLinkView->get_target_table().where(_backingLinkView),
+                                  RLMSortOrderFromDescriptors(_realm.schema[_objectClassName], properties));
+    return [RLMResults resultsWithObjectSchema:_realm.schema[self.objectClassName]
+                                       results:std::move(results)];
 }
 
 - (RLMResults *)objectsWithPredicate:(NSPredicate *)predicate {
@@ -402,9 +416,8 @@ static void RLMInsertObject(RLMArrayLinkView *ar, RLMObject *object, NSUInteger 
 
     realm::Query query = _backingLinkView->get_target_table().where(_backingLinkView);
     RLMUpdateQueryWithPredicate(&query, predicate, _realm.schema, _realm.schema[self.objectClassName]);
-    return [RLMResults resultsWithObjectClassName:self.objectClassName
-                                            query:std::make_unique<realm::Query>(query)
-                                            realm:_realm];
+    return [RLMResults resultsWithObjectSchema:_realm.schema[self.objectClassName]
+                                       results:realm::Results(_realm->_realm, std::move(query))];
 }
 
 - (NSUInteger)indexOfObjectWithPredicate:(NSPredicate *)predicate {
@@ -436,5 +449,39 @@ static void RLMInsertObject(RLMArrayLinkView *ar, RLMObject *object, NSUInteger 
 - (realm::TableView)tableView {
     return _backingLinkView->get_target_table().where(_backingLinkView).find_all();
 }
+
+// The compiler complains about the method's argument type not matching due to
+// it not having the generic type attached, but it doesn't seem to be possible
+// to actually include the generic type
+// http://www.openradar.me/radar?id=6135653276319744
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wmismatched-parameter-types"
+- (RLMNotificationToken *)addNotificationBlock:(void (^)(RLMArray *, NSError *))block {
+    [_realm verifyNotificationsAreSupported];
+
+    __block uint_fast64_t prevVersion = -1;
+    auto noteBlock = ^(NSString *notification, RLMRealm *) {
+        if (notification != RLMRealmDidChangeNotification) {
+            return;
+        }
+
+        if (!_backingLinkView->is_attached()) {
+            return;
+        }
+
+        auto version = _backingLinkView->get_origin_table().get_version_counter();
+        if (version != prevVersion) {
+            block(self, nil);
+            prevVersion = version;
+        }
+    };
+
+    CFRunLoopPerformBlock(CFRunLoopGetCurrent(), kCFRunLoopDefaultMode, ^{
+        noteBlock(RLMRealmDidChangeNotification, nil);
+    });
+
+    return [_realm addNotificationBlock:noteBlock];
+}
+#pragma clang diagnostic pop
 
 @end
