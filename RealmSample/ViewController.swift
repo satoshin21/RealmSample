@@ -32,19 +32,21 @@ class ViewController: UITableViewController {
         self.updateTableView()
         
         // get Hatena hotentries
-        Alamofire.request(.GET, hotEntryUrl).responseJSON { (request, response, result) -> Void in
+
+        Alamofire.request(hotEntryUrl).responseJSON { (response) in
             
-            if result.isFailure {
+            guard response.result.isSuccess, let value = response.result.value else {
+                
                 // FIXME:you need to handle errors.
                 return
             }
             
             // write request result to realm database
-            let json = JSON(result.value!)
+            let json = JSON(value)
             let entries = json["responseData"]["feed"]["entries"]
             realm.beginWrite()
             for (_, subJson) : (String, JSON) in entries {
-                let entry : Entry = Mapper<Entry>().map(subJson.dictionaryObject)!
+                let entry: Entry = Mapper<Entry>().map(JSONObject: subJson.dictionaryObject!)!
                 realm.add(entry, update: true)
             }
             
@@ -54,8 +56,8 @@ class ViewController: UITableViewController {
                 
             }
             self.updateTableView()
+
         }
-        
     }
     
     /**
@@ -65,7 +67,7 @@ class ViewController: UITableViewController {
     func updateTableView() {
 
         do {
-            self.entries = try Realm().objects(Entry).sorted(by: { (entry1, entry2) -> Bool in
+            self.entries = try Realm().objects(Entry.self).sorted(by: { (entry1, entry2) -> Bool in
             let res = entry1.publishedDate.compare(entry2.publishedDate)
             return (res == .orderedAscending || res == .orderedSame)
             })

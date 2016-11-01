@@ -18,9 +18,9 @@ class Entry : Object {
     dynamic var title : String = ""
     dynamic var contentSnippet : String = ""
     
-    required convenience init?(_ map: Map) {
+    required convenience init?(map: Map) {
         self.init()
-        mapping(map)
+        mapping(map: map)
     }
     
     override class func primaryKey() -> String {
@@ -30,7 +30,7 @@ class Entry : Object {
 
 extension Entry : Mappable {
     
-    func mapping(_ map: Map) {
+    func mapping(map: Map) {
         content         <- map["content"]
         link            <- map["link"]
         publishedDate   <- (map["publishedDate"] , EntryDateTransform())
@@ -41,12 +41,12 @@ extension Entry : Mappable {
 
 
 class EntryDateTransform : DateTransform {
-    override func transformFromJSON(_ value: AnyObject?) -> Date? {
+    override func transformFromJSON(_ value: Any?) -> Date? {
         if let dateStr = value as? String {
             return Date.dateWithString(
                 dateStr,
                 format: "E, dd MMM yyyy HH:mm:ss zzzz" ,
-                locale : Locale(localeIdentifier: "en_US"))
+                locale : Locale(identifier: "en_US"))
         }
         return nil
     }
