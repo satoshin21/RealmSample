@@ -19,17 +19,21 @@
 #import "RLMMigration_Private.h"
 
 #import "RLMAccessor.h"
-#import "RLMObject.h"
+#import "RLMObject_Private.h"
 #import "RLMObjectSchema_Private.hpp"
 #import "RLMObjectStore.h"
 #import "RLMProperty_Private.h"
 #import "RLMRealm_Dynamic.h"
 #import "RLMRealm_Private.hpp"
 #import "RLMResults_Private.h"
-#import "RLMSchema_Private.h"
+#import "RLMSchema_Private.hpp"
+#import "RLMUtil.hpp"
 
 #import "object_store.hpp"
 #import "shared_realm.hpp"
+#import "schema.hpp"
+
+#import <realm/table.hpp>
 
 using namespace realm;
 
@@ -49,14 +53,16 @@ using namespace realm;
 }
 @end
 
-@implementation RLMMigration
+@implementation RLMMigration {
+    realm::Schema *_schema;
+}
 
-- (instancetype)initWithRealm:(RLMRealm *)realm oldRealm:(RLMRealm *)oldRealm {
+- (instancetype)initWithRealm:(RLMRealm *)realm oldRealm:(RLMRealm *)oldRealm schema:(realm::Schema &)schema {
     self = [super init];
     if (self) {
-        // create rw realm to migrate with current on disk table
         _realm = realm;
         _oldRealm = oldRealm;
+        _schema = &schema;
         object_setClass(_oldRealm, RLMMigrationRealm.class);
     }
     return self;
@@ -100,21 +106,23 @@ using namespace realm;
 
 - (void)execute:(RLMMigrationBlock)block {
     @autoreleasepool {
-        // disable all primary keys for migration
+        // disable all primary keys for migration and use DynamicObject for all types
         for (RLMObjectSchema *objectSchema in _realm.schema.objectSchema) {
+            objectSchema.accessorClass = RLMDynamicObject.class;
             objectSchema.primaryKeyProperty.isPrimary = NO;
         }
+        for (RLMObjectSchema *objectSchema in _oldRealm.schema.objectSchema) {
+            objectSchema.accessorClass = RLMDynamicObject.class;
+        }
 
-        // apply block and set new schema version
-        uint64_t oldVersion = _oldRealm->_realm->config().schema_version;
-        block(self, oldVersion);
+        block(self, _oldRealm->_realm->schema_version());
 
         _oldRealm = nil;
         _realm = nil;
     }
 }
 
--(RLMObject *)createObject:(NSString *)className withValue:(id)value {
+- (RLMObject *)createObject:(NSString *)className withValue:(id)value {
     return [_realm createObject:className withValue:value];
 }
 
@@ -144,6 +152,11 @@ using namespace realm;
     }
 
     return true;
+}
+
+- (void)renamePropertyForClass:(NSString *)className oldName:(NSString *)oldName newName:(NSString *)newName {
+    const char *objectType = className.UTF8String;
+    realm::ObjectStore::rename_property(_realm.group, *_schema, objectType, oldName.UTF8String, newName.UTF8String);
 }
 
 @end

@@ -19,6 +19,7 @@
 #import "RLMObject_Private.h"
 
 #import "RLMRealm_Private.hpp"
+#import "RLMUtil.hpp"
 
 #import <realm/link_view.hpp> // required by row.hpp
 #import <realm/row.hpp>
@@ -29,9 +30,14 @@ class RLMObservationInfo;
 @interface RLMObjectBase () {
     @public
     realm::Row _row;
-    std::unique_ptr<RLMObservationInfo> _observationInfo;
+    RLMObservationInfo *_observationInfo;
+    RLMClassInfo *_info;
 }
 @end
+
+// FIXME-2.0: This should be folded into initWithRealm:schema:, but changing the
+// signature of that is a breaking change for Swift
+id RLMCreateManagedAccessor(Class cls, RLMRealm *realm, RLMClassInfo *info) NS_RETURNS_RETAINED;
 
 // throw an exception if the object is invalidated or on the wrong thread
 static inline void RLMVerifyAttached(__unsafe_unretained RLMObjectBase *const obj) {

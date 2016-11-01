@@ -1,8 +1,10 @@
-platform :ios, '8.0'
+platform :ios, '9.0'
 use_frameworks!
 
-pod 'Alamofire', '~> 2.0'
-pod 'ObjectMapper', '~> 0.11'
-pod 'AlamofireObjectMapper', '~> 0.2'
-pod 'SwiftyJSON', '~> 2.2'
-pod 'RealmSwift', '~> 0.92'
+target "RealmSample" do
+	pod 'Alamofire'
+	pod 'ObjectMapper'
+	pod 'AlamofireObjectMapper'
+	pod 'SwiftyJSON'
+	pod 'RealmSwift'
+end

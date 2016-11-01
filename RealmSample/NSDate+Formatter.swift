@@ -8,14 +8,14 @@
 
 import Foundation
 
-extension NSDate {
-    public static func dateWithString(dateStr : String? , format : String, locale : NSLocale) ->NSDate? {
+extension Date {
+    public static func dateWithString(_ dateStr : String? , format : String, locale : Locale) ->Date? {
         if let uwDateStr = dateStr {
-            let df : NSDateFormatter = NSDateFormatter()
-            df.locale = NSLocale(localeIdentifier: "en_US")
-            df.timeZone = NSTimeZone.defaultTimeZone()
+            let df : DateFormatter = DateFormatter()
+            df.locale = Locale(identifier: "en_US")
+            df.timeZone = TimeZone.current
             df.dateFormat = format
-            return df.dateFromString(uwDateStr)
+            return df.date(from: uwDateStr)
         }
         
         return nil

@@ -20,15 +20,15 @@ class EntryTableViewCell : UITableViewCell {
         self.clipsToBounds = false
         self.contentView.clipsToBounds = false
     }
-    override func setHighlighted(highlighted: Bool, animated: Bool) {
+    override func setHighlighted(_ highlighted: Bool, animated: Bool) {
         self.highlight(highlighted)
     }
     
-    override func setSelected(selected: Bool, animated: Bool) {
+    override func setSelected(_ selected: Bool, animated: Bool) {
         self.highlight(selected)
     }
     
-    func highlight(highLight : Bool){
+    func highlight(_ highLight : Bool){
         cardView.select = highLight
         cardView.setNeedsLayout()
     }

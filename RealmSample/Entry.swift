@@ -14,7 +14,7 @@ class Entry : Object {
     
     dynamic var content : String = ""
     dynamic var link : String = ""
-    dynamic var publishedDate : NSDate = NSDate()
+    dynamic var publishedDate : Date = Date()
     dynamic var title : String = ""
     dynamic var contentSnippet : String = ""
     
@@ -30,7 +30,7 @@ class Entry : Object {
 
 extension Entry : Mappable {
     
-    func mapping(map: Map) {
+    func mapping(_ map: Map) {
         content         <- map["content"]
         link            <- map["link"]
         publishedDate   <- (map["publishedDate"] , EntryDateTransform())
@@ -41,12 +41,12 @@ extension Entry : Mappable {
 
 
 class EntryDateTransform : DateTransform {
-    override func transformFromJSON(value: AnyObject?) -> NSDate? {
+    override func transformFromJSON(_ value: AnyObject?) -> Date? {
         if let dateStr = value as? String {
-            return NSDate.dateWithString(
+            return Date.dateWithString(
                 dateStr,
                 format: "E, dd MMM yyyy HH:mm:ss zzzz" ,
-                locale : NSLocale(localeIdentifier: "en_US"))
+                locale : Locale(localeIdentifier: "en_US"))
         }
         return nil
     }

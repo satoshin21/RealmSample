@@ -19,7 +19,7 @@
 			<key>isShown</key>
 			<false/>
 		</dict>
-		<key>Pods.xcscheme</key>
+		<key>Pods-RealmSample.xcscheme</key>
 		<dict>
 			<key>isShown</key>
 			<false/>
@@ -42,37 +42,37 @@
 	</dict>
 	<key>SuppressBuildableAutocreation</key>
 	<dict>
-		<key>1461EAA6A11AAE8F4D847A049DF11044</key>
+		<key>2F5622F3B18DF497981AB58C6D1FC72F</key>
 		<dict>
 			<key>primary</key>
 			<true/>
 		</dict>
-		<key>1994262535D57DB57E54D217D7BC0333</key>
+		<key>2F9CC64C73B9A18DD2ECEB3A9632A22A</key>
 		<dict>
 			<key>primary</key>
 			<true/>
 		</dict>
-		<key>4B2F30D90D85A544E9EFE2A49D392C25</key>
+		<key>88E9EC28B8B46C3631E6B242B50F4442</key>
 		<dict>
 			<key>primary</key>
 			<true/>
 		</dict>
-		<key>7BB49DFB48CCC713CBFFF8D1E776BE6A</key>
+		<key>9502FB01641FBABB78522037E882757B</key>
 		<dict>
 			<key>primary</key>
 			<true/>
 		</dict>
-		<key>C5CBCAA97E951CC882334464FBDF983D</key>
+		<key>A31BC62D3039C28E4355377560C5532A</key>
 		<dict>
 			<key>primary</key>
 			<true/>
 		</dict>
-		<key>E69D6E14BF6AC35C271C11B566F86414</key>
+		<key>BB2EEB56C380BBE2EB7B2852115F1F36</key>
 		<dict>
 			<key>primary</key>
 			<true/>
 		</dict>
-		<key>FBD082A0D35F7917EAB9DD9D3CCA9976</key>
+		<key>EADD0C8C803D6FE3D4285C8981411C5E</key>
 		<dict>
 			<key>primary</key>
 			<true/>

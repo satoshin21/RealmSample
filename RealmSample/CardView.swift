@@ -20,12 +20,12 @@ class CardView: UIView {
     
     func updateShadow(){
         self.clipsToBounds = false
-        self.layer.shadowPath = UIBezierPath(rect: self.bounds).CGPath;
+        self.layer.shadowPath = UIBezierPath(rect: self.bounds).cgPath;
         self.layer.shouldRasterize = false;
-        self.layer.rasterizationScale = UIScreen.mainScreen().scale;
+        self.layer.rasterizationScale = UIScreen.main.scale;
         
-        self.layer.shadowColor = select ? UIColor.grayColor().CGColor : UIColor.blackColor().CGColor
-        self.layer.shadowOffset = CGSizeMake(0, 0)
+        self.layer.shadowColor = select ? UIColor.gray.cgColor : UIColor.black.cgColor
+        self.layer.shadowOffset = CGSize(width: 0, height: 0)
         self.layer.shadowRadius = 1
         self.layer.shadowOpacity = 0.5
     }

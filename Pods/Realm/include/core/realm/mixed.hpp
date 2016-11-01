@@ -1,26 +1,25 @@
 /*************************************************************************
  *
- * REALM CONFIDENTIAL
- * __________________
+ * Copyright 2016 Realm Inc.
  *
- *  [2011] - [2015] Realm Inc
- *  All Rights Reserved.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * NOTICE:  All information contained herein is, and remains
- * the property of Realm Incorporated and its suppliers,
- * if any.  The intellectual and technical concepts contained
- * herein are proprietary to Realm Incorporated
- * and its suppliers and may be covered by U.S. and Foreign Patents,
- * patents in process, and are protected by trade secret or copyright law.
- * Dissemination of this information or reproduction of this material
- * is strictly forbidden unless prior written permission is obtained
- * from Realm Incorporated.
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  *
  **************************************************************************/
+
 #ifndef REALM_MIXED_HPP
 #define REALM_MIXED_HPP
 
-#include <stdint.h> // int64_t - not part of C++03, not even required by C++11 (see C++11 section 18.4.1)
+#include <cstdint> // int64_t - not part of C++03, not even required by C++11 (see C++11 section 18.4.1)
 
 #include <cstddef> // size_t
 #include <cstring>
@@ -29,9 +28,10 @@
 #include <realm/util/meta.hpp>
 #include <realm/utilities.hpp>
 #include <realm/data_type.hpp>
-#include <realm/datetime.hpp>
+#include <realm/olddatetime.hpp>
 #include <realm/string_data.hpp>
 #include <realm/binary_data.hpp>
+#include <realm/column_timestamp.hpp>
 
 namespace realm {
 
@@ -103,33 +103,50 @@ class Mixed {
 public:
     Mixed() noexcept;
 
-    Mixed(bool)       noexcept;
-    Mixed(int64_t)    noexcept;
-    Mixed(float)      noexcept;
-    Mixed(double)     noexcept;
+    Mixed(bool) noexcept;
+    Mixed(int64_t) noexcept;
+    Mixed(float) noexcept;
+    Mixed(double) noexcept;
     Mixed(StringData) noexcept;
     Mixed(BinaryData) noexcept;
-    Mixed(DateTime)   noexcept;
+    Mixed(OldDateTime) noexcept;
+    Mixed(Timestamp) noexcept;
 
     // These are shortcuts for Mixed(StringData(c_str)), and are
     // needed to avoid unwanted implicit conversion of char* to bool.
-    Mixed(      char* c_str) noexcept { set_string(c_str); }
-    Mixed(const char* c_str) noexcept { set_string(c_str); }
+    Mixed(char* c_str) noexcept
+    {
+        set_string(c_str);
+    }
+    Mixed(const char* c_str) noexcept
+    {
+        set_string(c_str);
+    }
 
-    struct subtable_tag {};
-    Mixed(subtable_tag) noexcept: m_type(type_Table) {}
+    struct subtable_tag {
+    };
+    Mixed(subtable_tag) noexcept
+        : m_type(type_Table)
+    {
+    }
 
-    ~Mixed() noexcept {}
+    ~Mixed() noexcept
+    {
+    }
 
-    DataType get_type() const noexcept { return m_type; }
+    DataType get_type() const noexcept
+    {
+        return m_type;
+    }
 
-    int64_t     get_int()      const noexcept;
-    bool        get_bool()     const noexcept;
-    float       get_float()    const noexcept;
-    double      get_double()   const noexcept;
-    StringData  get_string()   const noexcept;
-    BinaryData  get_binary()   const noexcept;
-    DateTime    get_datetime() const noexcept;
+    int64_t get_int() const noexcept;
+    bool get_bool() const noexcept;
+    float get_float() const noexcept;
+    double get_double() const noexcept;
+    StringData get_string() const noexcept;
+    BinaryData get_binary() const noexcept;
+    OldDateTime get_olddatetime() const noexcept;
+    Timestamp get_timestamp() const noexcept;
 
     void set_int(int64_t) noexcept;
     void set_bool(bool) noexcept;
@@ -138,20 +155,22 @@ public:
     void set_string(StringData) noexcept;
     void set_binary(BinaryData) noexcept;
     void set_binary(const char* data, size_t size) noexcept;
-    void set_datetime(DateTime) noexcept;
+    void set_olddatetime(OldDateTime) noexcept;
+    void set_timestamp(Timestamp) noexcept;
 
-    template<class Ch, class Tr>
+    template <class Ch, class Tr>
     friend std::basic_ostream<Ch, Tr>& operator<<(std::basic_ostream<Ch, Tr>&, const Mixed&);
 
 private:
     DataType m_type;
     union {
-        int64_t      m_int;
-        bool         m_bool;
-        float        m_float;
-        double       m_double;
-        const char*  m_data;
+        int64_t m_int;
+        bool m_bool;
+        float m_float;
+        double m_double;
+        const char* m_data;
         int_fast64_t m_date;
+        Timestamp m_timestamp;
     };
     size_t m_size = 0;
 };
@@ -166,13 +185,13 @@ private:
 // of Mixed are not explicit.
 
 // Compare mixed with integer
-template<class T>
+template <class T>
 bool operator==(Wrap<Mixed>, const T&) noexcept;
-template<class T>
+template <class T>
 bool operator!=(Wrap<Mixed>, const T&) noexcept;
-template<class T>
+template <class T>
 bool operator==(const T&, Wrap<Mixed>) noexcept;
-template<class T>
+template <class T>
 bool operator!=(const T&, Wrap<Mixed>) noexcept;
 
 // Compare mixed with boolean
@@ -214,12 +233,10 @@ bool operator==(BinaryData, Wrap<Mixed>) noexcept;
 bool operator!=(BinaryData, Wrap<Mixed>) noexcept;
 
 // Compare mixed with date
-bool operator==(Wrap<Mixed>, DateTime) noexcept;
-bool operator!=(Wrap<Mixed>, DateTime) noexcept;
-bool operator==(DateTime, Wrap<Mixed>) noexcept;
-bool operator!=(DateTime, Wrap<Mixed>) noexcept;
-
-
+bool operator==(Wrap<Mixed>, OldDateTime) noexcept;
+bool operator!=(Wrap<Mixed>, OldDateTime) noexcept;
+bool operator==(OldDateTime, Wrap<Mixed>) noexcept;
+bool operator!=(OldDateTime, Wrap<Mixed>) noexcept;
 
 
 // Implementation:
@@ -227,13 +244,13 @@ bool operator!=(DateTime, Wrap<Mixed>) noexcept;
 inline Mixed::Mixed() noexcept
 {
     m_type = type_Int;
-    m_int  = 0;
+    m_int = 0;
 }
 
 inline Mixed::Mixed(int64_t v) noexcept
 {
     m_type = type_Int;
-    m_int  = v;
+    m_int = v;
 }
 
 inline Mixed::Mixed(bool v) noexcept
@@ -250,8 +267,8 @@ inline Mixed::Mixed(float v) noexcept
 
 inline Mixed::Mixed(double v) noexcept
 {
-   m_type = type_Double;
-   m_double = v;
+    m_type = type_Double;
+    m_double = v;
 }
 
 inline Mixed::Mixed(StringData v) noexcept
@@ -268,12 +285,17 @@ inline Mixed::Mixed(BinaryData v) noexcept
     m_size = v.size();
 }
 
-inline Mixed::Mixed(DateTime v) noexcept
+inline Mixed::Mixed(OldDateTime v) noexcept
 {
-    m_type = type_DateTime;
-    m_date = v.get_datetime();
+    m_type = type_OldDateTime;
+    m_date = v.get_olddatetime();
 }
 
+inline Mixed::Mixed(Timestamp v) noexcept
+{
+    m_type = type_Timestamp;
+    m_timestamp = v;
+}
 
 inline int64_t Mixed::get_int() const noexcept
 {
@@ -311,12 +333,17 @@ inline BinaryData Mixed::get_binary() const noexcept
     return BinaryData(m_data, m_size);
 }
 
-inline DateTime Mixed::get_datetime() const noexcept
+inline OldDateTime Mixed::get_olddatetime() const noexcept
 {
-    REALM_ASSERT(m_type == type_DateTime);
+    REALM_ASSERT(m_type == type_OldDateTime);
     return m_date;
 }
 
+inline Timestamp Mixed::get_timestamp() const noexcept
+{
+    REALM_ASSERT(m_type == type_Timestamp);
+    return m_timestamp;
+}
 
 inline void Mixed::set_int(int64_t v) noexcept
 {
@@ -361,26 +388,54 @@ inline void Mixed::set_binary(const char* data, size_t size) noexcept
     m_size = size;
 }
 
-inline void Mixed::set_datetime(DateTime v) noexcept
+inline void Mixed::set_olddatetime(OldDateTime v) noexcept
 {
-    m_type = type_DateTime;
-    m_date = v.get_datetime();
+    m_type = type_OldDateTime;
+    m_date = v.get_olddatetime();
 }
 
+// LCOV_EXCL_START
+inline void Mixed::set_timestamp(Timestamp v) noexcept
+{
+    REALM_ASSERT(false && "not yet implemented");
+    m_type = type_Timestamp;
+    m_timestamp = v;
+}
+// LCOV_EXCL_STOP
 
-template<class Ch, class Tr>
+// LCOV_EXCL_START
+template <class Ch, class Tr>
 inline std::basic_ostream<Ch, Tr>& operator<<(std::basic_ostream<Ch, Tr>& out, const Mixed& m)
 {
     out << "Mixed(";
     switch (m.m_type) {
-        case type_Int:      out << m.m_int;                        break;
-        case type_Bool:     out << m.m_bool;                       break;
-        case type_Float:    out << m.m_float;                      break;
-        case type_Double:   out << m.m_double;                     break;
-        case type_String:   out << StringData(m.m_data, m.m_size); break;
-        case type_Binary:   out << BinaryData(m.m_data, m.m_size); break;
-        case type_DateTime: out << DateTime(m.m_date);             break;
-        case type_Table:    out << "subtable";                     break;
+        case type_Int:
+            out << m.m_int;
+            break;
+        case type_Bool:
+            out << m.m_bool;
+            break;
+        case type_Float:
+            out << m.m_float;
+            break;
+        case type_Double:
+            out << m.m_double;
+            break;
+        case type_String:
+            out << StringData(m.m_data, m.m_size);
+            break;
+        case type_Binary:
+            out << BinaryData(m.m_data, m.m_size);
+            break;
+        case type_OldDateTime:
+            out << OldDateTime(m.m_date);
+            break;
+        case type_Timestamp:
+            out << Timestamp(m.m_timestamp);
+            break;
+        case type_Table:
+            out << "subtable";
+            break;
         case type_Mixed:
         case type_Link:
         case type_LinkList:
@@ -389,29 +444,30 @@ inline std::basic_ostream<Ch, Tr>& operator<<(std::basic_ostream<Ch, Tr>& out, c
     out << ")";
     return out;
 }
+// LCOV_EXCL_STOP
 
 
 // Compare mixed with integer
 
-template<class T>
+template <class T>
 inline bool operator==(Wrap<Mixed> a, const T& b) noexcept
 {
     return Mixed(a).get_type() == type_Int && Mixed(a).get_int() == b;
 }
 
-template<class T>
+template <class T>
 inline bool operator!=(Wrap<Mixed> a, const T& b) noexcept
 {
     return Mixed(a).get_type() != type_Int || Mixed(a).get_int() != b;
 }
 
-template<class T>
+template <class T>
 inline bool operator==(const T& a, Wrap<Mixed> b) noexcept
 {
     return type_Int == Mixed(b).get_type() && a == Mixed(b).get_int();
 }
 
-template<class T>
+template <class T>
 inline bool operator!=(const T& a, Wrap<Mixed> b) noexcept
 {
     return type_Int != Mixed(b).get_type() || a != Mixed(b).get_int();
@@ -575,24 +631,24 @@ inline bool operator!=(BinaryData a, Wrap<Mixed> b) noexcept
 
 // Compare mixed with date
 
-inline bool operator==(Wrap<Mixed> a, DateTime b) noexcept
+inline bool operator==(Wrap<Mixed> a, OldDateTime b) noexcept
 {
-    return Mixed(a).get_type() == type_DateTime && DateTime(Mixed(a).get_datetime()) == b;
+    return Mixed(a).get_type() == type_OldDateTime && OldDateTime(Mixed(a).get_olddatetime()) == b;
 }
 
-inline bool operator!=(Wrap<Mixed> a, DateTime b) noexcept
+inline bool operator!=(Wrap<Mixed> a, OldDateTime b) noexcept
 {
-    return Mixed(a).get_type() != type_DateTime || DateTime(Mixed(a).get_datetime()) != b;
+    return Mixed(a).get_type() != type_OldDateTime || OldDateTime(Mixed(a).get_olddatetime()) != b;
 }
 
-inline bool operator==(DateTime a, Wrap<Mixed> b) noexcept
+inline bool operator==(OldDateTime a, Wrap<Mixed> b) noexcept
 {
-    return type_DateTime == Mixed(b).get_type() && a == DateTime(Mixed(b).get_datetime());
+    return type_OldDateTime == Mixed(b).get_type() && a == OldDateTime(Mixed(b).get_olddatetime());
 }
 
-inline bool operator!=(DateTime a, Wrap<Mixed> b) noexcept
+inline bool operator!=(OldDateTime a, Wrap<Mixed> b) noexcept
 {
-    return type_DateTime != Mixed(b).get_type() || a != DateTime(Mixed(b).get_datetime());
+    return type_OldDateTime != Mixed(b).get_type() || a != OldDateTime(Mixed(b).get_olddatetime());
 }
 
 
